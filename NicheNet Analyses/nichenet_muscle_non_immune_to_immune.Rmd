@@ -1,0 +1,1221 @@
+---
+title: "nichenet_muscle_non_immune_to_immune"
+author: "Alex Brown"
+date: "2026-03-03"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(DiagrammeR)
+library(igraph)
+library(ggraph)
+library(gridExtra)
+library(harmony)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(clusterProfiler)
+library(monocle3)
+library(NMF)
+library(circlize)
+library(ComplexHeatmap)
+library(CellChat)
+library(pheatmap)
+library(nichenetr)
+```
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/muscle_integrated.RData")
+
+rm(Agca_snLLC_CTL, Agca_snLLC_LLC, Brown_scLLC_CTL, Brown_scLLC_2w, Brown_scLLC_2.5w, Brown_scLLC_3.5w, Kim_scB16F10_CTL, Kim_scB16F10_B16F10, Pryce_scC26_CTL, Pryce_scC26_C26, Pryce_scKPP_CTL, Pryce_scKPP_KPP, Zhang_snKIC_CTL, Zhang_snKIC_KIC, DEGs_sc_combined, all_genes)
+
+DefaultAssay(sc_combined) <- "RNA"
+```
+
+
+## Define CTLs and Tumour-bearing
+
+```{r, include=FALSE}
+ctl_samples <- c(
+  "Agca_snLLC_CTL",
+  "Brown_scLLC_CTL",
+  "Kim_scB16F10_CTL",
+  "Pryce_scC26_CTL",
+  "Pryce_scKPP_CTL",
+  "Zhang_snKIC_CTL"
+)
+
+early_tb_samples <- c(
+  "Brown_scLLC_2w",
+  "Brown_scLLC_2.5w"
+)
+
+endpoint_tb_samples <- c(
+  "Agca_snLLC_LLC",
+  "Brown_scLLC_3.5w",
+  "Kim_scB16F10_B16F10",
+  "Pryce_scC26_C26",
+  "Pryce_scKPP_KPP",
+  "Zhang_snKIC_KIC"
+)
+
+
+
+sc_combined$condition <- NA
+
+sc_combined$condition[sc_combined$orig.ident %in% ctl_samples] <- "Control"
+
+sc_combined$condition[sc_combined$orig.ident %in% early_tb_samples] <- "Early tumour-bearing"
+
+sc_combined$condition[sc_combined$orig.ident %in% endpoint_tb_samples] <- "Endpoint tumour-bearing"
+
+rm(ctl_samples, early_tb_samples, endpoint_tb_samples)
+```
+
+
+
+# Load nichenet data (httpS://zenodo.org/record/7074291)
+
+```{r, include=FALSE}
+### LR network
+lr_network <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_databases/lr_network_mouse_21122021.rds")
+
+### weighted networks (lr_sig is interactions and weights in LR signaling network, gr is interactions and weights in gene regulator network)
+weighted_networks <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_databases/weighted_networks_nsga2r_final_mouse.rds")
+
+weighted_networks_lr = weighted_networks$lr_sig %>%
+  inner_join(lr_network, by = c("from", "to"))
+
+### ligand target matrix (probability that a ligand regulates gene expression in receiver cells)
+ligand_target_matrix <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_databases/ligand_target_matrix_nsga2r_final_mouse.rds")
+```
+
+
+
+# Define sender and receiver cell types
+
+### MUSCLE SENDERS "Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Neural/glial cells", "Schwann cells"
+
+### MUSCLE RECEIVERS "Monocytes", "Macrophages", "Neutrophils", "NK cells"
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+sender_cells <- c("Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Neural/glial cells", "Schwann cells")
+
+receiver_cells <- c("Monocytes", "Macrophages", "Neutrophils", "NK cells")
+```
+
+
+
+# Get genes expressed from sender and receiver cells 
+
+```{r, include=FALSE}
+list_expressed_genes_sender = sender_cells %>%
+  unique() %>%
+  lapply(get_expressed_genes, sc_combined, 0.10) # expressed in 10%
+
+sender_genes = list_expressed_genes_sender %>%
+  unlist() %>%
+  unique()
+
+receiver_genes = get_expressed_genes(receiver_cells, sc_combined, pct = 0.10)
+
+background_genes = receiver_genes %>%
+  .[. %in% rownames(ligand_target_matrix)]
+```
+
+
+
+# Define gene set of interest (genes in receiver cells that are affected by ligands from the sender cells)
+
+## Subset receiver cells
+
+```{r, include=FALSE}
+muscle_immune <- subset(sc_combined, idents = c("Monocytes", "Macrophages", "Neutrophils", "NK cells"))
+```
+
+
+## Differentially expressed receiver genes in receiver cells
+
+```{r, include=FALSE}
+Idents(muscle_immune) <- "condition"
+
+de_receiver_genes <- FindMarkers(muscle_immune, ident.1 = "Endpoint tumour-bearing", ident.2 = "Control", min.pct = 0.10)
+
+de_receiver_genes = de_receiver_genes %>%
+  filter(p_val_adj <= 0.05, abs(avg_log2FC) >= 0.2)
+
+de_receiver_gene_names <- rownames(de_receiver_genes)
+
+de_receiver_gene_names = de_receiver_gene_names %>%
+  .[. %in% rownames(ligand_target_matrix)]
+```
+
+
+## Identify potential ligands in the sender cell population that bind to receptor(s) in the receiver cell population
+
+```{r, include=FALSE}
+ligands = lr_network %>%
+  pull(from) %>%
+  unique()
+
+receptors = lr_network %>%
+  pull(to) %>%
+  unique()
+
+expressed_ligands = intersect(ligands, sender_genes)
+expressed_receptors = intersect(receptors, receiver_genes)
+
+potential_ligands = lr_network %>%
+  filter(from %in% expressed_ligands & to %in% expressed_receptors) %>%
+  pull(from) %>%
+  unique()
+```
+
+
+
+# NicheNet ligand activity analysis (rank ligands based on presence of target genes)
+
+### NOTE - AUPR (area under the precision-recall curve) used to rank ligand activity (between ligand's target prediction and observed transcriptional response)
+
+```{r, include=FALSE}
+ligand_activities = predict_ligand_activities(geneset = de_receiver_gene_names, background_expressed_genes = background_genes, ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+
+# Arrange aupr from highest to lowest
+ligand_activities = arrange(ligand_activities, -aupr_corrected)
+
+# To get all ligands
+ligand_activities_genes <- unique(ligand_activities$test_ligand)
+```
+
+
+## Filter for ligands found to be enriched from muscle non-immune cells (Satellite cells, Myoblasts, Myonuclei, Endothelial cells, vSMCs, Pericytes, FAPs, Tenocytes, Neural/glial cells, Schwann cells) to immune cells (Monocytes, Macrophages, Neutrophils, NK cells) using CellChat
+
+### Enrichment for PECAM2, GAS, VISFATIN pathways found via cellchat from muscle non-immune cells to immune cells
+
+```{r, include=FALSE}
+CellChatDB <- CellChatDB.mouse
+
+cellchat_enriched_pathways <- c("PECAM2", "GAS", "VISFATIN")
+
+cellchat_subset <- subset(CellChatDB$interaction,
+                    pathway_name %in% cellchat_enriched_pathways)
+
+cellchat_ligands <- unique(cellchat_subset$ligand)
+```
+
+### Filter ligand_activities_genes for those in cellchat_ligands
+
+```{r, include=FALSE}
+ligand_activities_genes_cellchat <- ligand_activities_genes[ligand_activities_genes %in% cellchat_ligands]
+```
+
+
+## Once ligand activities are found, can do dotplot on the top genes to see which cells are expressing those ligands
+
+```{r}
+DotPlot(sc_combined, features = ligand_activities_genes_cellchat, idents = sender_cells) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+
+# Infer the ligands with the highest regulatory potentials
+
+```{r, include=FALSE}
+# What ligands lead to the expression of target genes
+active_ligand_target_links_df = ligand_activities_genes_cellchat %>%
+  lapply(get_weighted_ligand_target_links, geneset = de_receiver_gene_names, ligand_target_matrix = ligand_target_matrix) %>%
+  bind_rows() %>%
+  drop_na()
+
+# Matrix of ligands (column names) and target genes (rownames) interaction weights
+
+quantile_value <- quantile(active_ligand_target_links_df$weight, probs = 0.90) # This takes the top 10% strongest regulatory links instead of using an arbitrary cutoff!
+
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = quantile_value)
+```
+
+
+## Heatmap ligands --> target genes
+
+### Filter for ligands expressed in sender cells with an average expression >= 0.25 in >= 25% of cells
+
+```{r, include=FALSE}
+non_immune <- subset(sc_combined, idents = c("Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Neural/glial cells", "Schwann cells"))
+
+# Extract log-normalized data
+sender_mat <- Seurat::GetAssayData(non_immune, assay = "RNA", layer = "data")[ligand_activities_genes_cellchat, ]
+
+# Compute average expression and % expressing
+sender_expr_stats <- data.frame(
+  ligand      = ligand_activities_genes_cellchat,
+  avg_exp     = Matrix::rowMeans(sender_mat), # average log-normalized expression
+  pct_express = Matrix::rowSums(sender_mat > 0) / ncol(sender_mat) # fraction of cells with >0
+)
+
+# Filter by thresholds (example: avg >= 0.25 and pct >= 25%)
+sender_expressed_ligands <- sender_expr_stats %>%
+  dplyr::filter(avg_exp >= 0.25, pct_express >= 0.25)
+
+sender_expr_stats   # all ligands with values
+sender_expressed_ligands <- sender_expressed_ligands$ligand # ligands meeting thresholds
+```
+
+### Heatmap with ligands confirmed to be expressed in sender cells
+
+```{r}
+order_ligands = intersect(ligand_activities_genes_cellchat, colnames(active_ligand_target_links)) %>% 
+  rev() %>%
+  make.names()
+
+order_targets = active_ligand_target_links_df$target %>%
+  unique() %>%
+  intersect(rownames(active_ligand_target_links)) %>%
+  make.names()
+
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>%
+  make.names()
+
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>%
+  make.names()
+
+vis_ligand_target = active_ligand_target_links[order_targets, order_ligands] %>%
+  t()
+
+p_ligand_target_network = vis_ligand_target %>%
+  make_heatmap_ggplot("Ligands", "Predicted target genes", color = "red", legend_position = "right", x_axis_position = "bottom", legend_title = "Regulatory potential") +
+  theme(axis.text.x = element_text(face = "italic"), axis.line = element_line(color = "black", size = 0.8)) +
+  scale_fill_gradient(low = "grey95", high = "red", limits = c(0, 0.3))
+
+p_ligand_target_network
+```
+
+### List of average and sum regulatory potential per ligand
+
+```{r}
+ligand_summary <- data.frame(
+  ligand   = rownames(vis_ligand_target),
+  row_sum  = rowSums(vis_ligand_target),
+  row_mean = rowMeans(vis_ligand_target),
+  stringsAsFactors = FALSE
+)
+
+ligand_summary$aupr_corrected <- 
+  ligand_activities$aupr_corrected[
+    match(ligand_summary$ligand, ligand_activities$test_ligand)
+  ]
+
+ligand_summary <- ligand_summary[nrow(ligand_summary):1, ]
+
+ligand_summary
+```
+
+### NOTE - Gas6, Nampt ligands from senders appear to have highest regulatory potential
+
+
+
+# GO terms on the most impacted predicted target genes
+
+## Get a list of the predicted target genes with a regulatory potential of top 50% from respective ligands
+
+```{r}
+# get the 50th percentile (cutoff for top 50%)
+cutoff_Gas6 <- quantile(vis_ligand_target["Gas6", ], 0.50)
+cutoff_Nampt <- quantile(vis_ligand_target["Nampt", ], 0.50)
+
+cutoff_Gas6
+cutoff_Nampt
+mean(c(cutoff_Gas6, cutoff_Nampt))
+```
+
+```{r}
+ligand_target_genes <- vis_ligand_target %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ligand") %>%
+  tidyr::pivot_longer(-ligand,
+                      names_to = "target",
+                      values_to = "regulatory_potential") %>%
+  dplyr::filter(
+    regulatory_potential > 0.01684554, # NOTE - different than tumour to muscle analyses! These regulatory scores are lower and threshold was chosen based on the top 50% of Gas6 (higher cutoff than Nampt).
+    ligand %in% c("Gas6", "Nampt")
+  )
+
+ligand_target_gene_list <- unique(ligand_target_genes$target)
+
+ligand_target_gene_list
+```
+
+
+## Find which predicted target genes are actually differentially expressed in the receiver cells
+
+```{r, include=FALSE}
+# ALREADY RAN DEG EXPRESSION ON RECEIVER CELLS (de_receiver_genes)
+
+## Make sure that there is a "gene" column in de_receiver_genes
+de_receiver_genes <- de_receiver_genes %>%
+  tibble::rownames_to_column("gene")
+
+## Upregulated
+ligand_target_gene_list_pos <- de_receiver_genes %>%
+  dplyr::filter(
+    gene %in% ligand_target_gene_list,
+    avg_log2FC > 0.2
+  ) %>%
+  dplyr::pull(gene) %>%
+  unique()
+
+
+## Downregulated
+ligand_target_gene_list_neg <- de_receiver_genes %>%
+  dplyr::filter(
+    gene %in% ligand_target_gene_list,
+    avg_log2FC < -0.2
+  ) %>%
+  dplyr::pull(gene) %>%
+  unique()
+```
+
+```{r}
+ligand_target_gene_list_pos
+```
+
+```{r}
+ligand_target_gene_list_neg
+```
+
+
+## Run GO analyses
+
+```{r, include=FALSE}
+upgo_predicted_genes_muscle_immune_from_muscle_non_immune <- enrichGO(gene = ligand_target_gene_list_pos, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+```
+
+```{r, include=FALSE}
+write.csv(upgo_predicted_genes_muscle_immune_from_muscle_non_immune, file = "upgo_predicted_genes_muscle_immune_from_muscle_non_immune.csv", row.names = TRUE)
+```
+
+### NOTE - skip downgo because only 2 genes.
+
+## Visualize GO terms for predicted target genes
+
+### UPGO - Specific terms not obvious, going to visualize top 25
+
+```{r}
+predicted_up <- c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)
+go_predicted_up <- upgo_predicted_genes_muscle_immune_from_muscle_non_immune[predicted_up, ]
+
+go_predicted_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_predicted_up$Description)
+
+ggplot(go_predicted_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UPGO Predicted Muscle Immune from Muscle Non-Immune - top 25 terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+
+
+# Receptors receiving signals from most active ligands
+
+### Specify receptors for the Thbs1 ligands
+
+```{r, include=FALSE}
+# Your ligands of interest
+top_ligands <- c("Gas6", "Nampt")
+
+# Extract ligand–receptor table from CellChatDB
+lr_pairs <- CellChatDB$interaction
+
+# Filter to your ligands
+lr_subset <- lr_pairs %>%
+  dplyr::filter(ligand %in% top_ligands)
+
+# View the receptors associated with your ligands
+target_receptors <- unique(lr_subset$receptor)
+target_receptors
+```
+
+### Thbs1 gave receptor complexes so need to split into gene names
+
+```{r}
+target_receptors <- c("Itga5", "Itgb1", "Ax1", "Mertk", "Tyro3")
+
+# Check to see which of these are in muscle_non_immune
+all_genes <- rownames(muscle_immune[["RNA"]])
+
+target_receptors %in% all_genes
+
+target_receptors <- c("Itga5", "Itgb1", "Mertk", "Tyro3")
+```
+
+
+### Filter for receptors expressed in receiver cells with an average expression >= 0.2 in >= 10% of cells
+
+```{r, include=FALSE}
+# Extract log-normalized data for receiver cells
+receiver_mat <- Seurat::GetAssayData(muscle_immune, assay = "RNA", layer = "data")[target_receptors, ]
+
+# Compute average expression and % of cells expressing each receptor
+receiver_expr_stats <- data.frame(
+  receptor     = target_receptors,
+  avg_exp      = Matrix::rowMeans(receiver_mat),             # mean expression
+  pct_express  = Matrix::rowSums(receiver_mat > 0) / ncol(receiver_mat)  # fraction of cells expressing
+)
+
+# Apply thresholds (>=0.1 expression AND >=10% of cells)
+receiver_expressed_receptors <- receiver_expr_stats %>%
+  dplyr::filter(avg_exp >= 0.2, pct_express >= 0.1)
+
+# Extract receptor names passing thresholds
+receiver_expressed_receptors <- receiver_expressed_receptors$receptor
+```
+
+### Get matrix of interaction weights between ligands and receptors
+
+```{r, include=FALSE}
+lr_network_top <- lr_network %>%
+  filter(from %in% ligand_activities_genes_cellchat & to %in% receiver_expressed_receptors) %>%
+  distinct(from, to)
+
+lr_network_top_df_large = weighted_networks_lr %>%
+  filter(from %in% ligand_activities_genes_cellchat & to %in% receiver_expressed_receptors)
+
+lr_network_top_df = lr_network_top_df_large %>%
+  spread("from", "weight", fill = 0)
+
+lr_network_top_matrix = lr_network_top_df %>%
+  select(-to) %>%
+  as.matrix() %>%
+  magrittr::set_rownames(lr_network_top_df$to)
+
+lr_network_top_matrix <- as.matrix(lr_network_top_matrix)
+mode(lr_network_top_matrix) <- "numeric"
+lr_network_top_matrix[is.na(lr_network_top_matrix)] <- 0
+
+dist_ligands = dist(lr_network_top_matrix, method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$label[hclust_ligands$order]
+
+dist_receptors = dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$label[hclust_receptors$order]
+
+order_receptors = order_receptors %>%
+  intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>%
+  intersect(colnames(lr_network_top_matrix))
+```
+
+### Clean lr_networs_top_matrix to pass through heatmap
+
+```{r, include=FALSE}
+# Remove non-numeric metadata columns (keep drop=FALSE to stay as matrix)
+lr_network_top_matrix_clean <- lr_network_top_matrix[, !colnames(lr_network_top_matrix) %in% c("database", "source"), drop = FALSE]
+
+# Convert to data frame and add Receptor column
+lr_network_df <- as.data.frame(lr_network_top_matrix_clean)
+lr_network_df$Receptor <- gsub("\\.1$", "", rownames(lr_network_top_matrix_clean))
+
+# Collapse duplicate rows by summing
+lr_network_df_collapsed <- lr_network_df %>%
+  group_by(Receptor) %>%
+  summarise(across(everything(), sum), .groups = "drop")  # works if only 1 row
+
+# Convert back to matrix and set rownames
+lr_network_top_matrix_clean <- lr_network_df_collapsed %>%
+  column_to_rownames("Receptor") %>%
+  as.matrix()
+
+# Ensure numeric
+mode(lr_network_top_matrix_clean) <- "numeric"
+```
+
+```{r}
+### Specify ligands and receptors of interest
+my_ligands <- c("Gas6", "Nampt")
+my_receptors <- c("Itga5", "Itgb1", "Mertk", "Tyro3")
+
+# Subset matrix manually, only keep receptors that exist
+receptors_in_matrix <- intersect(my_receptors, rownames(lr_network_top_matrix_clean))
+ligands_in_matrix   <- intersect(my_ligands, colnames(lr_network_top_matrix_clean))
+
+vis_ligand_receptor_network <- lr_network_top_matrix_clean[
+  receptors_in_matrix, 
+  ligands_in_matrix, 
+  drop = FALSE
+]
+
+# Transpose to have ligands on y-axis (rows) and receptors on x-axis (columns)
+vis_ligand_receptor_network <- t(vis_ligand_receptor_network)
+
+# Ensure numeric
+mode(vis_ligand_receptor_network) <- "numeric"
+
+# Plot with make_heatmap_ggplot (keeping your original style)
+p_ligand_receptor_network <- vis_ligand_receptor_network %>%
+  make_heatmap_ggplot(
+    x_name = "Receptors",
+    y_name = "Ligands",
+    color = "red",
+    legend_position = "right",
+    x_axis_position = "bottom",
+    legend_title = "Prior interaction potential"
+  ) +
+  scale_fill_gradient(low = "grey95", high = "red", limits = c(0, 1.5)) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.line = element_line(color = "black", size = 0.8)
+  )
+
+p_ligand_receptor_network
+```
+
+
+## Dotplot to see which cells are expressing those receptors
+
+```{r}
+Idents(muscle_immune) <- "seurat_clusters"
+
+DotPlot(muscle_immune, features = c("Itga5", "Itgb1", "Mertk"), idents = receiver_cells) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Check change in receptor expression with cachexia
+
+### Kruskal-Wallis test to compare all 3 groups
+
+```{r}
+# Genes to test
+kw_genes <- c("Itga5", "Itgb1", "Mertk")
+
+# Extract expression + condition
+kw_df <- FetchData(
+  muscle_immune,
+  vars = c("condition", kw_genes)
+)
+
+# Initialize results list
+kw_results <- lapply(kw_genes, function(gene) {
+  # Kruskal-Wallis test
+  formula <- as.formula(paste(gene, "~ condition"))
+  test <- kruskal.test(formula, data = kw_df)
+  
+  # Return results in a data.frame
+  data.frame(
+    gene = gene,
+    KW_statistic = test$statistic,
+    p_value = test$p.value
+  )
+})
+
+# Combine into a single table
+kw_results <- do.call(rbind, kw_results)
+
+# Adjust p-values for multiple testing
+kw_results$p_adj <- p.adjust(kw_results$p_value, method = "BH")
+
+# Print results
+kw_results
+```
+
+### Pairwise comparisons for post-hoc tests
+
+```{r}
+# Genes to test
+kw_genes <- c("Itga5", "Itgb1", "Mertk")
+
+# Extract expression + condition
+kw_df <- FetchData(
+  muscle_immune,
+  vars = c("condition", kw_genes)
+)
+
+# Initialize list to store pairwise results
+pairwise_results <- lapply(kw_genes, function(gene) {
+  
+  # All unique condition pairs
+  conds <- unique(kw_df$condition)
+  combs <- t(combn(conds, 2))
+  
+  # Compute p-values and log2FC for each pair
+  pw_list <- lapply(1:nrow(combs), function(i) {
+    g1 <- combs[i, 1]
+    g2 <- combs[i, 2]
+    
+    # Subset data
+    x1 <- kw_df[[gene]][kw_df$condition == g1]
+    x2 <- kw_df[[gene]][kw_df$condition == g2]
+    
+    # Wilcoxon test
+    p <- wilcox.test(x1, x2)$p.value
+    
+    # log2 fold change (mean of group1 / mean of group2)
+    log2fc <- log2(mean(x1 + 1e-6) / mean(x2 + 1e-6)) # add small pseudocount to avoid log2(0)
+    
+    data.frame(
+      gene = gene,
+      group1 = g1,
+      group2 = g2,
+      p_value = p,
+      log2FC = log2fc
+    )
+  })
+  
+  # Combine pairs for this gene
+  do.call(rbind, pw_list)
+})
+
+# Combine all genes
+pairwise_results <- do.call(rbind, pairwise_results)
+
+# Adjust p-values for multiple testing
+pairwise_results$p_adj <- p.adjust(pairwise_results$p_value, method = "BH")
+
+# Reorder columns nicely
+pairwise_results <- pairwise_results[, c("gene", "group1", "group2", "p_adj", "log2FC")]
+
+# Print results
+pairwise_results
+```
+
+### Subset for ONLY "Monocytes", "Macrophages", then get Itga5 and Mertk expression split by experiment to run stats
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+muscle_immune_Itga5_Mertk <- subset(sc_combined, idents = c("Monocytes", "Macrophages"))
+
+# Create combined grouping variable
+muscle_immune_Itga5_Mertk$cond_sample <- paste(
+  muscle_immune_Itga5_Mertk$condition,
+  muscle_immune_Itga5_Mertk$orig.ident,
+  sep = "_"
+)
+
+# Set identity to this new grouping
+Idents(muscle_immune_Itga5_Mertk) <- "cond_sample"
+
+# Genes of interest
+receptors_genes_muscle_immune_Itga5_Mertk <- c("Itga5", "Mertk")
+
+# Get mean expression
+avg_receptors_exp_muscle_immune_Itga5_Mertk <- AverageExpression(
+  muscle_immune_Itga5_Mertk,
+  features = receptors_genes_muscle_immune_Itga5_Mertk,
+  assays = "RNA",
+  layer = "data"
+)
+```
+
+```{r, include=FALSE}
+write.csv(avg_receptors_exp_muscle_immune_Itga5_Mertk, file = "muscle_non_immune_to_muscle_immune_Itga5_Mertk_expression.csv", row.names = TRUE)
+```
+
+```{r}
+avg_receptors_exp_muscle_immune_Itga5_Mertk
+```
+
+### Subset for ONLY "Monocytes", "Macrophages", "NK cells", then get Itgb1 expression split by experiment to run stats
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+muscle_immune_Itgb1 <- subset(sc_combined, idents = c("Monocytes", "Macrophages", "NK cells"))
+
+# Create combined grouping variable
+muscle_immune_Itgb1$cond_sample <- paste(
+  muscle_immune_Itgb1$condition,
+  muscle_immune_Itgb1$orig.ident,
+  sep = "_"
+)
+
+# Set identity to this new grouping
+Idents(muscle_immune_Itgb1) <- "cond_sample"
+
+# Genes of interest
+receptors_genes_muscle_immune_Itgb1 <- "Itgb1"
+
+# Get mean expression
+avg_receptors_exp_muscle_immune_Itgb1 <- AverageExpression(
+  muscle_immune_Itgb1,
+  features = receptors_genes_muscle_immune_Itgb1,
+  assays = "RNA",
+  layer = "data"
+)
+```
+
+```{r, include=FALSE}
+write.csv(avg_receptors_exp_muscle_immune_Itgb1, file = "muscle_non_immune_to_muscle_immune_Itgb1_expression.csv", row.names = TRUE)
+```
+
+```{r}
+avg_receptors_exp_muscle_immune_Itgb1
+```
+
+
+## Boxplots of receptors
+
+```{r}
+Idents(muscle_immune_Itga5_Mertk) <- "condition"
+Idents(muscle_immune_Itgb1) <- "condition"
+
+
+
+# Create small data frames directly from the Seurat object
+Itga5_df <- data.frame(
+  expression = Seurat::GetAssayData(muscle_immune_Itga5_Mertk, slot = "data")["Itga5", ], 
+  condition  = muscle_immune_Itga5_Mertk$condition
+)
+
+Itgb1_df <- data.frame(
+  expression = Seurat::GetAssayData(muscle_immune_Itgb1, slot = "data")["Itgb1", ], 
+  condition  = muscle_immune_Itgb1$condition
+)
+
+Mertk_df <- data.frame(
+  expression = Seurat::GetAssayData(muscle_immune_Itga5_Mertk, slot = "data")["Mertk", ], 
+  condition  = muscle_immune_Itga5_Mertk$condition
+)
+
+
+
+# Boxplots
+
+Itga5_df_nonzero <- Itga5_df %>%
+  dplyr::filter(expression > 0)
+
+ggplot(Itga5_df_nonzero, aes(x = condition, y = expression, fill = condition)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8) +
+  labs(title = "Itga5 (expressing cells only)", y = "Expression", x = NULL) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "Control" = "white",
+    "Early tumour-bearing" = "lightgrey",
+    "Endpoint tumour-bearing" = "#666666")) +
+  stat_boxplot(geom = "errorbar", width = 0.2, lwd = 0.8) +
+  coord_cartesian(ylim = c(0, 4))
+
+
+
+Itgb1_df_nonzero <- Itgb1_df %>%
+  dplyr::filter(expression > 0)
+
+ggplot(Itgb1_df_nonzero, aes(x = condition, y = expression, fill = condition)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8) +
+  labs(title = "Itgb1 (expressing cells only)", y = "Expression", x = NULL) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "Control" = "white",
+    "Early tumour-bearing" = "lightgrey",
+    "Endpoint tumour-bearing" = "#666666")) +
+  stat_boxplot(geom = "errorbar", width = 0.2, lwd = 0.8) +
+  coord_cartesian(ylim = c(0, 4))
+
+
+
+Mertk_df_nonzero <- Mertk_df %>%
+  dplyr::filter(expression > 0)
+
+ggplot(Mertk_df_nonzero, aes(x = condition, y = expression, fill = condition)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8) +
+  labs(title = "Mertk (expressing cells only)", y = "Expression", x = NULL) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "Control" = "white",
+    "Early tumour-bearing" = "lightgrey",
+    "Endpoint tumour-bearing" = "#666666")) +
+  stat_boxplot(geom = "errorbar", width = 0.2, lwd = 0.8) +
+  coord_cartesian(ylim = c(0, 4))
+```
+
+
+
+# Ligand-to-target gene signaling paths
+
+## Find target genes from highly expressed ligands
+
+### High regulatory ligands Gas6
+
+```{r, include=FALSE}
+# From Regulatory potential heatmap
+ligands_gas6 = "Gas6"
+
+# Subset active_ligand_target_links_df and get unique targets
+targets_gas6 <- active_ligand_target_links_df %>%
+  dplyr::filter(ligand %in% ligands_gas6) %>%
+  dplyr::pull(target) %>%
+  unique()
+
+# Chose specific target(s) because the graph won't work well with too many
+targets_gas6_immune <- c("Il1b","Tnf","Cxcl1","Ebi3","Nfkbia","Tnfaip3","Bcl3","Birc3","Cebpb","Cebpd","Zfp36","Irf1","Irf7","Irf9","Stat1","Tap1","Gbp7","Ddx60","Ifi204","Ifi207","Ifi209","Ifi211","Wars","H2-D1","H2-K1","H2-M3","H2-Q4","H2-Q6","H2-Q7","B2m","Casp1","Cd86")
+targets_gas6_survival <- c("Bcl2l1","Mcl1","Pim1","Cflar","Fas","Pmaip1","Sgk1","Akt1","Map3k5","Cdkn1a","Gadd45a","Gadd45b","Gadd45g")
+targets_gas6_ecm <- c("Itga5","Cd44","Icam1","Egfr","Lifr","Lpp","Cemip2")
+```
+
+
+## Plot gene regulatory interactions
+
+### Gas6 Immune
+
+```{r}
+# ---- 1. Calculate the GAS6 signaling network ----
+# ligands_gas6 = your vector of GAS6 ligands (e.g., "Gas6")
+# targets_gas6_immune = your vector of downstream immune target genes
+# weighted_networks = your precomputed weighted network object
+gas6_signaling_network <- get_ligand_signaling_path(
+  ligand_tf_matrix = ligand_target_matrix,
+  ligands_all = ligands_gas6,
+  targets_all = targets_gas6_immune,
+  weighted_networks = weighted_networks
+)
+
+# ---- 2. Normalize edge weights (optional) ----
+gas6_signaling_network_min_max <- gas6_signaling_network
+gas6_signaling_network_min_max$sig <- gas6_signaling_network_min_max$sig %>%
+  dplyr::mutate(weight = (weight - min(weight)) / (max(weight) - min(weight)) + 0.75)
+
+# ---- 3. Prepare edges and nodes ----
+edges_df <- gas6_signaling_network_min_max$sig[, c("from", "to", "weight")]
+nodes_df <- data.frame(name = unique(c(edges_df$from, edges_df$to)))
+nodes_df$type <- ifelse(nodes_df$name %in% ligands_gas6, "ligand", "target")
+
+# ---- 4. Build igraph object ----
+gas6_igraph <- graph_from_data_frame(
+  d = edges_df[, c("from", "to")],
+  vertices = nodes_df,
+  directed = TRUE
+)
+
+# ---- 5. Plot dendrogram ----
+ggraph(gas6_igraph, layout = "dendrogram") +
+  geom_edge_diagonal(alpha = 0.5, color = "grey50") +
+  geom_node_point(aes(color = type), size = 3) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 repel = TRUE,
+                 hjust = 1) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "none"
+  )
+
+# ---- 6. Save TIFF and EPS ----
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_gas6_immune.tiff", width = 10, height = 8, dpi = 1200)
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_gas6_immune.eps", width = 10, height = 8, dpi = 1200)
+```
+
+### Gas6 Survival
+
+```{r}
+# ---- 1. Calculate the GAS6 signaling network ----
+# ligands_gas6 = your vector of GAS6 ligands (e.g., "Gas6")
+# targets_gas6_survival = your vector of downstream survival target genes
+# weighted_networks = your precomputed weighted network object
+gas6_signaling_network <- get_ligand_signaling_path(
+  ligand_tf_matrix = ligand_target_matrix,
+  ligands_all = ligands_gas6,
+  targets_all = targets_gas6_survival,
+  weighted_networks = weighted_networks
+)
+
+# ---- 2. Normalize edge weights (optional) ----
+gas6_signaling_network_min_max <- gas6_signaling_network
+gas6_signaling_network_min_max$sig <- gas6_signaling_network_min_max$sig %>%
+  dplyr::mutate(weight = (weight - min(weight)) / (max(weight) - min(weight)) + 0.75)
+
+# ---- 3. Prepare edges and nodes ----
+edges_df <- gas6_signaling_network_min_max$sig[, c("from", "to", "weight")]
+nodes_df <- data.frame(name = unique(c(edges_df$from, edges_df$to)))
+nodes_df$type <- ifelse(nodes_df$name %in% ligands_gas6, "ligand", "target")
+
+# ---- 4. Build igraph object ----
+gas6_igraph <- graph_from_data_frame(
+  d = edges_df[, c("from", "to")],
+  vertices = nodes_df,
+  directed = TRUE
+)
+
+# ---- 5. Plot dendrogram ----
+ggraph(gas6_igraph, layout = "dendrogram") +
+  geom_edge_diagonal(alpha = 0.5, color = "grey50") +
+  geom_node_point(aes(color = type), size = 3) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 repel = TRUE,
+                 hjust = 1) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "none"
+  )
+
+# ---- 6. Save TIFF and EPS ----
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_gas6_survival.tiff", width = 10, height = 8, dpi = 1200)
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_gas6_survival.eps", width = 10, height = 8, dpi = 1200)
+```
+
+### Gas6 ECM
+
+```{r}
+# ---- 1. Calculate the GAS6 signaling network ----
+# ligands_gas6 = your vector of GAS6 ligands (e.g., "Gas6")
+# targets_gas6_ecm = your vector of downstream target genes
+# weighted_networks = your precomputed weighted network object
+gas6_signaling_network <- get_ligand_signaling_path(
+  ligand_tf_matrix = ligand_target_matrix,
+  ligands_all = ligands_gas6,
+  targets_all = targets_gas6_ecm,
+  weighted_networks = weighted_networks
+)
+
+# ---- 2. Normalize edge weights (optional) ----
+gas6_signaling_network_min_max <- gas6_signaling_network
+gas6_signaling_network_min_max$sig <- gas6_signaling_network_min_max$sig %>%
+  dplyr::mutate(weight = (weight - min(weight)) / (max(weight) - min(weight)) + 0.75)
+
+# ---- 3. Prepare edges and nodes ----
+edges_df <- gas6_signaling_network_min_max$sig[, c("from", "to", "weight")]
+nodes_df <- data.frame(name = unique(c(edges_df$from, edges_df$to)))
+nodes_df$type <- ifelse(nodes_df$name %in% ligands_gas6, "ligand", "target")
+
+# ---- 4. Build igraph object ----
+gas6_igraph <- graph_from_data_frame(
+  d = edges_df[, c("from", "to")],
+  vertices = nodes_df,
+  directed = TRUE
+)
+
+# ---- 5. Plot dendrogram ----
+ggraph(gas6_igraph, layout = "dendrogram") +
+  geom_edge_diagonal(alpha = 0.5, color = "grey50") +
+  geom_node_point(aes(color = type), size = 3) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 repel = TRUE,
+                 hjust = 1) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "none"
+  )
+
+# ---- 6. Save TIFF and EPS ----
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_gas6_ecm.tiff", width = 10, height = 8, dpi = 1200)
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_gas6_ecm.eps", width = 10, height = 8, dpi = 1200)
+```
+
+### High regulatory ligands Nampt
+
+```{r, include=FALSE}
+# From Regulatory potential heatmap
+ligands_nampt = "Nampt"
+
+# Subset active_ligand_target_links_df and get unique targets
+targets_nampt <- active_ligand_target_links_df %>%
+  dplyr::filter(ligand %in% ligands_nampt) %>%
+  dplyr::pull(target) %>%
+  unique()
+
+# Chose specific target(s) because the graph won't work well with too many
+targets_nampt_immune <- c("Il1b","Tnf","Ccl5","Ebi3","Stat1","Stat3","Socs3","Nfkbia","Tnfaip3","Bcl3","Birc3","Cebpa","Cebpb","Zfp36","Zfp36l1","Ifi204","Ifi211")
+targets_nampt_survival <- c("Bcl2l1","Bcl2l11","Mcl1","Pim1","Sgk1","Pmaip1","Fas","Cdkn1a","Gadd45a","Gadd45b","Gadd45g","Ddit3","Ddit4","Trp53inp1","Mdm2","Pten","Trib1")
+targets_nampt_ecm <- c("Cd44","Icam1","Egfr","Lpp","Vim","Emp1","Ctnnb1")
+```
+
+
+## Plot gene regulatory interactions
+
+### Nampt Immune
+
+```{r}
+# ---- 1. Calculate the NAMPT signaling network ----
+# ligands_nampt = your vector of NAMPT ligands (e.g., "Nampt")
+# targets_nampt_immune = your vector of downstream immune target genes
+# weighted_networks = your precomputed weighted network object
+nampt_signaling_network <- get_ligand_signaling_path(
+  ligand_tf_matrix = ligand_target_matrix,
+  ligands_all = ligands_nampt,
+  targets_all = targets_nampt_immune,
+  weighted_networks = weighted_networks
+)
+
+# ---- 2. Normalize edge weights (optional) ----
+nampt_signaling_network_min_max <- nampt_signaling_network
+nampt_signaling_network_min_max$sig <- nampt_signaling_network_min_max$sig %>%
+  dplyr::mutate(weight = (weight - min(weight)) / (max(weight) - min(weight)) + 0.75)
+
+# ---- 3. Prepare edges and nodes ----
+edges_df <- nampt_signaling_network_min_max$sig[, c("from", "to", "weight")]
+nodes_df <- data.frame(name = unique(c(edges_df$from, edges_df$to)))
+nodes_df$type <- ifelse(nodes_df$name %in% ligands_nampt, "ligand", "target")
+
+# ---- 4. Build igraph object ----
+nampt_igraph <- graph_from_data_frame(
+  d = edges_df[, c("from", "to")],
+  vertices = nodes_df,
+  directed = TRUE
+)
+
+# ---- 5. Plot dendrogram ----
+ggraph(nampt_igraph, layout = "dendrogram") +
+  geom_edge_diagonal(alpha = 0.5, color = "grey50") +
+  geom_node_point(aes(color = type), size = 3) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 repel = TRUE,
+                 hjust = 1) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "none"
+  )
+
+# ---- 6. Save TIFF and EPS ----
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_nampt_immune.tiff", width = 10, height = 8, dpi = 1200)
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_nampt_immune.eps", width = 10, height = 8, dpi = 1200)
+```
+
+### Nampt Survival
+
+```{r}
+# ---- 1. Calculate the NAMPT signaling network ----
+# ligands_nampt = your vector of NAMPT ligands (e.g., "Nampt")
+# targets_nampt_survival = your vector of downstream survival target genes
+# weighted_networks = your precomputed weighted network object
+nampt_signaling_network <- get_ligand_signaling_path(
+  ligand_tf_matrix = ligand_target_matrix,
+  ligands_all = ligands_nampt,
+  targets_all = targets_nampt_survival,
+  weighted_networks = weighted_networks
+)
+
+# ---- 2. Normalize edge weights (optional) ----
+nampt_signaling_network_min_max <- nampt_signaling_network
+nampt_signaling_network_min_max$sig <- nampt_signaling_network_min_max$sig %>%
+  dplyr::mutate(weight = (weight - min(weight)) / (max(weight) - min(weight)) + 0.75)
+
+# ---- 3. Prepare edges and nodes ----
+edges_df <- nampt_signaling_network_min_max$sig[, c("from", "to", "weight")]
+nodes_df <- data.frame(name = unique(c(edges_df$from, edges_df$to)))
+nodes_df$type <- ifelse(nodes_df$name %in% ligands_nampt, "ligand", "target")
+
+# ---- 4. Build igraph object ----
+nampt_igraph <- graph_from_data_frame(
+  d = edges_df[, c("from", "to")],
+  vertices = nodes_df,
+  directed = TRUE
+)
+
+# ---- 5. Plot dendrogram ----
+ggraph(nampt_igraph, layout = "dendrogram") +
+  geom_edge_diagonal(alpha = 0.5, color = "grey50") +
+  geom_node_point(aes(color = type), size = 3) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 repel = TRUE,
+                 hjust = 1) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "none"
+  )
+
+# ---- 6. Save TIFF and EPS ----
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_nampt_survival.tiff", width = 10, height = 8, dpi = 1200)
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_nampt_survival.eps", width = 10, height = 8, dpi = 1200)
+```
+
+### Nampt ECM
+
+```{r}
+# ---- 1. Calculate the NAMPT signaling network ----
+# ligands_nampt = your vector of NAMPT ligands (e.g., "Nampt")
+# targets_nampt_ecm = your vector of downstream ECM target genes
+# weighted_networks = your precomputed weighted network object
+nampt_signaling_network <- get_ligand_signaling_path(
+  ligand_tf_matrix = ligand_target_matrix,
+  ligands_all = ligands_nampt,
+  targets_all = targets_nampt_ecm,
+  weighted_networks = weighted_networks
+)
+
+# ---- 2. Normalize edge weights (optional) ----
+nampt_signaling_network_min_max <- nampt_signaling_network
+nampt_signaling_network_min_max$sig <- nampt_signaling_network_min_max$sig %>%
+  dplyr::mutate(weight = (weight - min(weight)) / (max(weight) - min(weight)) + 0.75)
+
+# ---- 3. Prepare edges and nodes ----
+edges_df <- nampt_signaling_network_min_max$sig[, c("from", "to", "weight")]
+nodes_df <- data.frame(name = unique(c(edges_df$from, edges_df$to)))
+nodes_df$type <- ifelse(nodes_df$name %in% ligands_nampt, "ligand", "target")
+
+# ---- 4. Build igraph object ----
+nampt_igraph <- graph_from_data_frame(
+  d = edges_df[, c("from", "to")],
+  vertices = nodes_df,
+  directed = TRUE
+)
+
+# ---- 5. Plot dendrogram ----
+ggraph(nampt_igraph, layout = "dendrogram") +
+  geom_edge_diagonal(alpha = 0.5, color = "grey50") +
+  geom_node_point(aes(color = type), size = 3) +
+  geom_node_text(aes(label = name),
+                 size = 3,
+                 repel = TRUE,
+                 hjust = 1) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "none"
+  )
+
+# ---- 6. Save TIFF and EPS ----
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_nampt_ecm.tiff", width = 10, height = 8, dpi = 1200)
+ggsave("dendrogram_muscle_non_immune_to_muscle_immune_nampt_ecm.eps", width = 10, height = 8, dpi = 1200)
+```

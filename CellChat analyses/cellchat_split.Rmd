@@ -1,0 +1,1461 @@
+---
+title: "cellchat_split"
+author: "Alex Brown"
+date: "2026-02-18"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(gridExtra)
+library(harmony)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(clusterProfiler)
+library(monocle3)
+library(NMF)
+library(circlize)
+library(ComplexHeatmap)
+library(CellChat)
+library(pheatmap)
+```
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/muscle_integrated.RData")
+
+rm(all_genes, DEGs_sc_combined, Agca_snLLC_CTL, Agca_snLLC_LLC, Brown_scLLC_CTL, Brown_scLLC_2w, Brown_scLLC_2.5w, Brown_scLLC_3.5w, Kim_scB16F10_CTL, Kim_scB16F10_B16F10, Pryce_scC26_CTL, Pryce_scC26_C26, Pryce_scKPP_CTL, Pryce_scKPP_KPP, Zhang_snKIC_CTL, Zhang_snKIC_KIC)
+
+
+load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/LLC_tumours_scRNAseq.RData")
+LLC_tumour <- LLC_tumour_singlets
+rm(LLC_tumour_singlets)
+
+load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/B16_tumours_scRNAseq.RData")
+B16_tumour <- B16_tumour_so_norm
+rm(B16_tumour_so_norm)
+
+load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/MC38_tumours_immune_scRNAseq.RData")
+MC38_tumour <- MC38_tumour_singlets
+rm(MC38_tumour_singlets)
+
+load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/KPC_tumours_scRNAseq.RData")
+KPC_tumour <- KPC_combined
+rm(KPC_combined)
+
+rm(all_genes_B16_tumour, all_genes_KPC_tumours, all_genes_LLC_tumour)
+```
+
+
+
+# Specify "Muscle" or "Tumour" in seurat objects
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- paste("Muscle", sc_combined$seurat_clusters)
+Idents(sc_combined) <- sc_combined$seurat_clusters
+
+LLC_tumour$seurat_clusters <- paste("Tumour", LLC_tumour$seurat_clusters)
+Idents(LLC_tumour) <- LLC_tumour$seurat_clusters
+
+B16_tumour$seurat_clusters <- paste("Tumour", B16_tumour$seurat_clusters)
+Idents(B16_tumour) <- B16_tumour$seurat_clusters
+
+MC38_tumour$seurat_clusters <- paste("Tumour", MC38_tumour$seurat_clusters)
+Idents(MC38_tumour) <- MC38_tumour$seurat_clusters
+
+KPC_tumour$seurat_clusters <- paste("Tumour", KPC_tumour$seurat_clusters)
+Idents(KPC_tumour) <- KPC_tumour$seurat_clusters
+```
+
+
+
+# Subset for conditions
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "orig.ident"
+
+LLC_ctl_muscle <- subset(sc_combined, idents = c("Agca_snLLC_CTL", "Brown_scLLC_CTL"))
+LLC_end_muscle <- subset(sc_combined, idents = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w"))
+
+B16_ctl_muscle <- subset(sc_combined, idents = "Kim_scB16F10_CTL")
+B16_end_muscle <- subset(sc_combined, idents = "Kim_scB16F10_B16F10")
+
+C26_ctl_muscle <- subset(sc_combined, idents = "Pryce_scC26_CTL")
+C26_end_muscle <- subset(sc_combined, idents = "Pryce_scC26_C26")
+
+KPP_KIC_ctl_muscle <- subset(sc_combined, idents = c("Pryce_scKPP_CTL", "Zhang_snKIC_CTL"))
+KPP_KIC_end_muscle <- subset(sc_combined, idents = c("Pryce_scKPP_KPP", "Zhang_snKIC_KIC"))
+
+rm(sc_combined)
+```
+
+
+
+# Add in metadata about tissue type
+
+```{r, include=FALSE}
+LLC_ctl_muscle$tissue <- "Muscle"
+LLC_end_muscle$tissue <- "Muscle"
+
+B16_ctl_muscle$tissue <- "Muscle"
+B16_end_muscle$tissue <- "Muscle"
+
+C26_ctl_muscle$tissue <- "Muscle"
+C26_end_muscle$tissue <- "Muscle"
+
+KPP_KIC_ctl_muscle$tissue <- "Muscle"
+KPP_KIC_end_muscle$tissue <- "Muscle"
+
+LLC_tumour$tissue <- "Tumour"
+B16_tumour$tissue <- "Tumour"
+MC38_tumour$tissue <- "Tumour"
+KPC_tumour$tissue <- "Tumour"
+```
+
+
+# Combine muscle and tumour objects
+
+## Extract the counts layer you want from the muscle object
+```{r, include=FALSE}
+LLC_ctl_muscle_counts <- GetAssayData(LLC_ctl_muscle[["RNA"]], layer = "data.SeuratProject", slot = "counts")
+LLC_end_muscle_counts <- GetAssayData(LLC_end_muscle[["RNA"]], layer = "data.SeuratProject", slot = "counts")
+
+B16_ctl_muscle_counts <- GetAssayData(B16_ctl_muscle[["RNA"]], layer = "data.SeuratProject", slot = "counts")
+B16_end_muscle_counts <- GetAssayData(B16_end_muscle[["RNA"]], layer = "data.SeuratProject", slot = "counts")
+
+C26_ctl_muscle_counts <- GetAssayData(C26_ctl_muscle[["RNA"]], layer = "data.1", slot = "counts")
+C26_end_muscle_counts <- GetAssayData(C26_end_muscle[["RNA"]], layer = "data.1", slot = "counts")
+
+KPP_KIC_ctl_muscle_counts <- GetAssayData(KPP_KIC_ctl_muscle[["RNA"]], layer = "data.1", slot = "counts")
+KPP_KIC_end_muscle_counts <- GetAssayData(KPP_KIC_end_muscle[["RNA"]], layer = "data.1", slot = "counts")
+
+
+
+LLC_ctl_muscle[["RNA"]] <- CreateAssayObject(counts = LLC_ctl_muscle_counts)
+LLC_end_muscle[["RNA"]] <- CreateAssayObject(counts = LLC_end_muscle_counts)
+
+B16_ctl_muscle[["RNA"]] <- CreateAssayObject(counts = B16_ctl_muscle_counts)
+B16_end_muscle[["RNA"]] <- CreateAssayObject(counts = B16_end_muscle_counts)
+
+C26_ctl_muscle[["RNA"]] <- CreateAssayObject(counts = C26_ctl_muscle_counts)
+C26_end_muscle[["RNA"]] <- CreateAssayObject(counts = C26_end_muscle_counts)
+
+KPP_KIC_ctl_muscle[["RNA"]] <- CreateAssayObject(counts = KPP_KIC_ctl_muscle_counts)
+KPP_KIC_end_muscle[["RNA"]] <- CreateAssayObject(counts = KPP_KIC_end_muscle_counts)
+
+rm(LLC_ctl_muscle_counts, LLC_end_muscle_counts, B16_ctl_muscle_counts, B16_end_muscle_counts, C26_ctl_muscle_counts, C26_end_muscle_counts, KPP_KIC_ctl_muscle_counts, KPP_KIC_end_muscle_counts)
+```
+
+
+## Repeat for tumour
+
+```{r, include=FALSE}
+LLC_tumour_counts <- GetAssayData(LLC_tumour[["RNA"]], layer = "data", slot = "counts")
+B16_tumour_counts <- GetAssayData(B16_tumour[["RNA"]], layer = "data", slot = "counts")
+MC38_tumour_counts <- GetAssayData(MC38_tumour[["RNA"]], layer = "data", slot = "counts")
+KPC_tumour_counts <- GetAssayData(KPC_tumour[["RNA"]], layer = "data", slot = "counts")
+
+
+
+LLC_tumour[["RNA"]] <- CreateAssayObject(counts = LLC_tumour_counts)
+B16_tumour[["RNA"]] <- CreateAssayObject(counts = B16_tumour_counts)
+MC38_tumour[["RNA"]] <- CreateAssayObject(counts = MC38_tumour_counts)
+KPC_tumour[["RNA"]] <- CreateAssayObject(counts = KPC_tumour_counts)
+
+rm(LLC_tumour_counts, B16_tumour_counts, MC38_tumour_counts, KPC_tumour_counts)
+```
+
+
+## Merge muscle and tumour
+
+```{r, include=FALSE}
+LLC_ctl <- RenameCells(LLC_ctl_muscle, add.cell.id = "Muscle")
+
+LLC_end <- merge(
+  LLC_end_muscle,
+  y = LLC_tumour,
+  add.cell.ids = c("Muscle", "Tumour")
+)
+
+B16_ctl <- RenameCells(B16_ctl_muscle, add.cell.id = "Muscle")
+
+B16_end <- merge(
+  B16_end_muscle,
+  y = B16_tumour,
+  add.cell.ids = c("Muscle", "Tumour")
+)
+
+C26_ctl <- RenameCells(C26_ctl_muscle, add.cell.id = "Muscle")
+
+C26_end <- merge(
+  C26_end_muscle,
+  y = MC38_tumour,
+  add.cell.ids = c("Muscle", "Tumour")
+)
+
+KPP_KIC_ctl <- RenameCells(KPP_KIC_ctl_muscle, add.cell.id = "Muscle")
+
+KPP_KIC_end <- merge(
+  KPP_KIC_end_muscle,
+  y = KPC_tumour,
+  add.cell.ids = c("Muscle", "Tumour")
+)
+```
+
+
+## Normalize
+
+```{r, include=FALSE}
+LLC_ctl <- NormalizeData(LLC_ctl)
+LLC_end <- NormalizeData(LLC_end)
+
+B16_ctl <- NormalizeData(B16_ctl)
+B16_end <- NormalizeData(B16_end)
+
+C26_ctl <- NormalizeData(C26_ctl)
+C26_end <- NormalizeData(C26_end)
+
+KPP_KIC_ctl <- NormalizeData(KPP_KIC_ctl)
+KPP_KIC_end <- NormalizeData(KPP_KIC_end)
+```
+
+
+## Confirm layers
+
+```{r}
+Layers(LLC_ctl[["RNA"]])
+Layers(LLC_end[["RNA"]])
+
+Layers(B16_ctl[["RNA"]])
+Layers(B16_end[["RNA"]])
+
+Layers(C26_ctl[["RNA"]])
+Layers(C26_end[["RNA"]])
+
+Layers(KPP_KIC_ctl[["RNA"]])
+Layers(KPP_KIC_end[["RNA"]])
+```
+
+
+## See which clusters are present
+
+```{r}
+unique(LLC_ctl@meta.data$seurat_clusters)
+unique(LLC_end@meta.data$seurat_clusters)
+
+unique(B16_ctl@meta.data$seurat_clusters)
+unique(B16_end@meta.data$seurat_clusters)
+
+unique(C26_ctl@meta.data$seurat_clusters)
+unique(C26_end@meta.data$seurat_clusters)
+
+unique(KPP_KIC_ctl@meta.data$seurat_clusters)
+unique(KPP_KIC_end@meta.data$seurat_clusters)
+```
+
+
+
+# Order idents
+
+```{r, include=FALSE}
+LLC_ctl_levels <- c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
+
+LLC_ctl$seurat_clusters <- factor(LLC_ctl$seurat_clusters, levels =
+                                    LLC_ctl_levels)
+                                  
+Idents(LLC_ctl) <- "seurat_clusters"
+
+
+LLC_end_levels <- c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells", "Tumour Tumour cells", "Tumour ECs/CAFs", "Tumour Monocytes", "Tumour Macrophages", "Tumour Neutrophils", "Tumour T cells/NK cells", "Tumour Dendritic cells")
+
+LLC_end$seurat_clusters <- factor(LLC_end$seurat_clusters, levels =
+                                    LLC_end_levels)
+                                  
+Idents(LLC_end) <- "seurat_clusters"
+
+
+
+B16_ctl_levels <- c("Muscle Satellite cells", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
+
+B16_ctl$seurat_clusters <- factor(B16_ctl$seurat_clusters, levels =
+                                    B16_ctl_levels)
+                                  
+Idents(B16_ctl) <- "seurat_clusters"
+
+
+B16_end$seurat_clusters[B16_end$seurat_clusters == "Tumour Endothelial cells/CAFs"] <- "Tumour ECs/CAFs"
+
+B16_end_levels <- c("Muscle Satellite cells", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells", "Tumour Tumour cells", "Tumour ECs/CAFs", "Tumour Monocytes/macrophages")
+
+B16_end$seurat_clusters <- factor(B16_end$seurat_clusters, levels =
+                                    B16_end_levels)
+                                  
+Idents(B16_end) <- "seurat_clusters"
+
+
+
+C26_ctl_levels <- c("Muscle Satellite cells", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
+
+C26_ctl$seurat_clusters <- factor(C26_ctl$seurat_clusters, levels =
+                                    C26_ctl_levels)
+                                  
+Idents(C26_ctl) <- "seurat_clusters"
+
+
+C26_end_levels <- c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells", "Tumour CAFs", "Tumour Monocytes", "Tumour Macrophages", "Tumour Neutrophils", "Tumour T cells", "Tumour NK cells")
+
+C26_end$seurat_clusters <- factor(C26_end$seurat_clusters, levels =
+                                    C26_end_levels)
+                                  
+Idents(C26_end) <- "seurat_clusters"
+
+
+
+KPP_KIC_ctl_levels <- c("Muscle Satellite cells", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
+
+KPP_KIC_ctl$seurat_clusters <- factor(KPP_KIC_ctl$seurat_clusters, levels =
+                                    KPP_KIC_ctl_levels)
+                                  
+Idents(KPP_KIC_ctl) <- "seurat_clusters"
+
+
+KPP_KIC_end_levels <- c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells", "Tumour Tumour cells", "Tumour Endothelial cells", "Tumour CAFs", "Tumour Monocytes", "Tumour Macrophages")
+
+KPP_KIC_end$seurat_clusters <- factor(KPP_KIC_end$seurat_clusters, levels =
+                                    KPP_KIC_end_levels)
+                                  
+Idents(KPP_KIC_end) <- "seurat_clusters"
+
+
+
+rm(LLC_ctl_levels, LLC_end_levels, B16_ctl_levels, B16_end_levels, C26_ctl_levels, C26_end_levels, KPP_KIC_ctl_levels, KPP_KIC_end_levels)
+```
+
+
+
+# Create CellChat object
+
+## GetAssayData
+
+```{r, include=FALSE}
+data_input_LLC_ctl <- GetAssayData(LLC_ctl[["RNA"]], layer = "data")
+data_input_LLC_end <- GetAssayData(LLC_end[["RNA"]], layer = "data")
+
+data_input_B16_ctl <- GetAssayData(B16_ctl[["RNA"]], layer = "data")
+data_input_B16_end <- GetAssayData(B16_end[["RNA"]], layer = "data")
+
+data_input_C26_ctl <- GetAssayData(C26_ctl[["RNA"]], layer = "data")
+data_input_C26_end <- GetAssayData(C26_end[["RNA"]], layer = "data")
+
+data_input_KPP_KIC_ctl <- GetAssayData(KPP_KIC_ctl[["RNA"]], layer = "data")
+data_input_KPP_KIC_end <- GetAssayData(KPP_KIC_end[["RNA"]], layer = "data")
+```
+
+
+## Metadata
+
+```{r, include=FALSE}
+LLC_ctl_common_cells <- colnames(data_input_LLC_ctl)
+LLC_end_common_cells <- colnames(data_input_LLC_end)
+
+B16_ctl_common_cells <- colnames(data_input_B16_ctl)
+B16_end_common_cells <- colnames(data_input_B16_end)
+
+C26_ctl_common_cells <- colnames(data_input_C26_ctl)
+C26_end_common_cells <- colnames(data_input_C26_end)
+
+KPP_KIC_ctl_common_cells <- colnames(data_input_KPP_KIC_ctl)
+KPP_KIC_end_common_cells <- colnames(data_input_KPP_KIC_end)
+
+
+
+cellchat_LLC_ctl_meta <- LLC_ctl@meta.data[LLC_ctl_common_cells, c("seurat_clusters", "orig.ident")]
+cellchat_LLC_end_meta <- LLC_end@meta.data[LLC_end_common_cells, c("seurat_clusters", "orig.ident")]
+
+cellchat_B16_ctl_meta <- B16_ctl@meta.data[B16_ctl_common_cells, c("seurat_clusters", "orig.ident")]
+cellchat_B16_end_meta <- B16_end@meta.data[B16_end_common_cells, c("seurat_clusters", "orig.ident")]
+
+cellchat_C26_ctl_meta <- C26_ctl@meta.data[C26_ctl_common_cells, c("seurat_clusters", "orig.ident")]
+cellchat_C26_end_meta <- C26_end@meta.data[C26_end_common_cells, c("seurat_clusters", "orig.ident")]
+
+cellchat_KPP_KIC_ctl_meta <- KPP_KIC_ctl@meta.data[KPP_KIC_ctl_common_cells, c("seurat_clusters", "orig.ident")]
+cellchat_KPP_KIC_end_meta <- KPP_KIC_end@meta.data[KPP_KIC_end_common_cells, c("seurat_clusters", "orig.ident")]
+
+
+
+colnames(cellchat_LLC_ctl_meta) <- c("group", "samples")
+colnames(cellchat_LLC_end_meta) <- c("group", "samples")
+
+colnames(cellchat_B16_ctl_meta) <- c("group", "samples")
+colnames(cellchat_B16_end_meta) <- c("group", "samples")
+
+colnames(cellchat_C26_ctl_meta) <- c("group", "samples")
+colnames(cellchat_C26_end_meta) <- c("group", "samples")
+
+colnames(cellchat_KPP_KIC_ctl_meta) <- c("group", "samples")
+colnames(cellchat_KPP_KIC_end_meta) <- c("group", "samples")
+```
+
+
+## createCellChat
+
+```{r, include=FALSE}
+cellchat_LLC_ctl_all <- createCellChat(object = data_input_LLC_ctl, meta = cellchat_LLC_ctl_meta, group.by = "group")
+cellchat_LLC_ctl_secreted <- createCellChat(object = data_input_LLC_ctl, meta = cellchat_LLC_ctl_meta, group.by = "group")
+cellchat_LLC_ctl_ecm <- createCellChat(object = data_input_LLC_ctl, meta = cellchat_LLC_ctl_meta, group.by = "group")
+cellchat_LLC_ctl_nps <- createCellChat(object = data_input_LLC_ctl, meta = cellchat_LLC_ctl_meta, group.by = "group")
+cellchat_LLC_ctl_ccc <- createCellChat(object = data_input_LLC_ctl, meta = cellchat_LLC_ctl_meta, group.by = "group")
+
+cellchat_LLC_end_all <- createCellChat(object = data_input_LLC_end, meta = cellchat_LLC_end_meta, group.by = "group")
+cellchat_LLC_end_secreted <- createCellChat(object = data_input_LLC_end, meta = cellchat_LLC_end_meta, group.by = "group")
+cellchat_LLC_end_ecm <- createCellChat(object = data_input_LLC_end, meta = cellchat_LLC_end_meta, group.by = "group")
+cellchat_LLC_end_nps <- createCellChat(object = data_input_LLC_end, meta = cellchat_LLC_end_meta, group.by = "group")
+cellchat_LLC_end_ccc <- createCellChat(object = data_input_LLC_end, meta = cellchat_LLC_end_meta, group.by = "group")
+
+cellchat_B16_ctl_all <- createCellChat(object = data_input_B16_ctl, meta = cellchat_B16_ctl_meta, group.by = "group")
+cellchat_B16_ctl_secreted <- createCellChat(object = data_input_B16_ctl, meta = cellchat_B16_ctl_meta, group.by = "group")
+cellchat_B16_ctl_ecm <- createCellChat(object = data_input_B16_ctl, meta = cellchat_B16_ctl_meta, group.by = "group")
+cellchat_B16_ctl_nps <- createCellChat(object = data_input_B16_ctl, meta = cellchat_B16_ctl_meta, group.by = "group")
+cellchat_B16_ctl_ccc <- createCellChat(object = data_input_B16_ctl, meta = cellchat_B16_ctl_meta, group.by = "group")
+
+cellchat_B16_end_all <- createCellChat(object = data_input_B16_end, meta = cellchat_B16_end_meta, group.by = "group")
+cellchat_B16_end_secreted <- createCellChat(object = data_input_B16_end, meta = cellchat_B16_end_meta, group.by = "group")
+cellchat_B16_end_ecm <- createCellChat(object = data_input_B16_end, meta = cellchat_B16_end_meta, group.by = "group")
+cellchat_B16_end_nps <- createCellChat(object = data_input_B16_end, meta = cellchat_B16_end_meta, group.by = "group")
+cellchat_B16_end_ccc <- createCellChat(object = data_input_B16_end, meta = cellchat_B16_end_meta, group.by = "group")
+
+cellchat_C26_ctl_all <- createCellChat(object = data_input_C26_ctl, meta = cellchat_C26_ctl_meta, group.by = "group")
+cellchat_C26_ctl_secreted <- createCellChat(object = data_input_C26_ctl, meta = cellchat_C26_ctl_meta, group.by = "group")
+cellchat_C26_ctl_ecm <- createCellChat(object = data_input_C26_ctl, meta = cellchat_C26_ctl_meta, group.by = "group")
+cellchat_C26_ctl_nps <- createCellChat(object = data_input_C26_ctl, meta = cellchat_C26_ctl_meta, group.by = "group")
+cellchat_C26_ctl_ccc <- createCellChat(object = data_input_C26_ctl, meta = cellchat_C26_ctl_meta, group.by = "group")
+
+cellchat_C26_end_all <- createCellChat(object = data_input_C26_end, meta = cellchat_C26_end_meta, group.by = "group")
+cellchat_C26_end_secreted <- createCellChat(object = data_input_C26_end, meta = cellchat_C26_end_meta, group.by = "group")
+cellchat_C26_end_ecm <- createCellChat(object = data_input_C26_end, meta = cellchat_C26_end_meta, group.by = "group")
+cellchat_C26_end_nps <- createCellChat(object = data_input_C26_end, meta = cellchat_C26_end_meta, group.by = "group")
+cellchat_C26_end_ccc <- createCellChat(object = data_input_C26_end, meta = cellchat_C26_end_meta, group.by = "group")
+
+cellchat_KPP_KIC_ctl_all <- createCellChat(object = data_input_KPP_KIC_ctl, meta = cellchat_KPP_KIC_ctl_meta, group.by = "group")
+cellchat_KPP_KIC_ctl_secreted <- createCellChat(object = data_input_KPP_KIC_ctl, meta = cellchat_KPP_KIC_ctl_meta, group.by = "group")
+cellchat_KPP_KIC_ctl_ecm <- createCellChat(object = data_input_KPP_KIC_ctl, meta = cellchat_KPP_KIC_ctl_meta, group.by = "group")
+cellchat_KPP_KIC_ctl_nps <- createCellChat(object = data_input_KPP_KIC_ctl, meta = cellchat_KPP_KIC_ctl_meta, group.by = "group")
+cellchat_KPP_KIC_ctl_ccc <- createCellChat(object = data_input_KPP_KIC_ctl, meta = cellchat_KPP_KIC_ctl_meta, group.by = "group")
+
+cellchat_KPP_KIC_end_all <- createCellChat(object = data_input_KPP_KIC_end, meta = cellchat_KPP_KIC_end_meta, group.by = "group")
+cellchat_KPP_KIC_end_secreted <- createCellChat(object = data_input_KPP_KIC_end, meta = cellchat_KPP_KIC_end_meta, group.by = "group")
+cellchat_KPP_KIC_end_ecm <- createCellChat(object = data_input_KPP_KIC_end, meta = cellchat_KPP_KIC_end_meta, group.by = "group")
+cellchat_KPP_KIC_end_nps <- createCellChat(object = data_input_KPP_KIC_end, meta = cellchat_KPP_KIC_end_meta, group.by = "group")
+cellchat_KPP_KIC_end_ccc <- createCellChat(object = data_input_KPP_KIC_end, meta = cellchat_KPP_KIC_end_meta, group.by = "group")
+```
+
+
+
+# Set which CellChat database to use
+
+```{r, include=FALSE}
+cellchat_LLC_ctl_all@DB <- CellChatDB.mouse
+cellchat_LLC_ctl_secreted@DB <- CellChatDB.mouse
+cellchat_LLC_ctl_ecm@DB <- CellChatDB.mouse
+cellchat_LLC_ctl_nps@DB <- CellChatDB.mouse
+cellchat_LLC_ctl_ccc@DB <- CellChatDB.mouse
+
+cellchat_LLC_end_all@DB <- CellChatDB.mouse
+cellchat_LLC_end_secreted@DB <- CellChatDB.mouse
+cellchat_LLC_end_ecm@DB <- CellChatDB.mouse
+cellchat_LLC_end_nps@DB <- CellChatDB.mouse
+cellchat_LLC_end_ccc@DB <- CellChatDB.mouse
+
+cellchat_B16_ctl_all@DB <- CellChatDB.mouse
+cellchat_B16_ctl_secreted@DB <- CellChatDB.mouse
+cellchat_B16_ctl_ecm@DB <- CellChatDB.mouse
+cellchat_B16_ctl_nps@DB <- CellChatDB.mouse
+cellchat_B16_ctl_ccc@DB <- CellChatDB.mouse
+
+cellchat_B16_end_all@DB <- CellChatDB.mouse
+cellchat_B16_end_secreted@DB <- CellChatDB.mouse
+cellchat_B16_end_ecm@DB <- CellChatDB.mouse
+cellchat_B16_end_nps@DB <- CellChatDB.mouse
+cellchat_B16_end_ccc@DB <- CellChatDB.mouse
+
+cellchat_C26_ctl_all@DB <- CellChatDB.mouse
+cellchat_C26_ctl_secreted@DB <- CellChatDB.mouse
+cellchat_C26_ctl_ecm@DB <- CellChatDB.mouse
+cellchat_C26_ctl_nps@DB <- CellChatDB.mouse
+cellchat_C26_ctl_ccc@DB <- CellChatDB.mouse
+
+cellchat_C26_end_all@DB <- CellChatDB.mouse
+cellchat_C26_end_secreted@DB <- CellChatDB.mouse
+cellchat_C26_end_ecm@DB <- CellChatDB.mouse
+cellchat_C26_end_nps@DB <- CellChatDB.mouse
+cellchat_C26_end_ccc@DB <- CellChatDB.mouse
+
+cellchat_KPP_KIC_ctl_all@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_ctl_secreted@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_ctl_ecm@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_ctl_nps@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_ctl_ccc@DB <- CellChatDB.mouse
+
+cellchat_KPP_KIC_end_all@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_end_secreted@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_end_ecm@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_end_nps@DB <- CellChatDB.mouse
+cellchat_KPP_KIC_end_ccc@DB <- CellChatDB.mouse
+```
+
+
+
+# Subset for interaction type
+
+```{r, include=FALSE}
+# Define database subsets
+CellChatDB_secreted <- subsetDB(CellChatDB.mouse, search = "Secreted Signaling")
+CellChatDB_ECM <- subsetDB(CellChatDB.mouse, search = "ECM-Receptor")
+CellChatDB_nps <- subsetDB(CellChatDB.mouse, search = "Non-protein Signaling")
+CellChatDB_ccc <- subsetDB(CellChatDB.mouse, search = "Cell-Cell Contact")
+
+# Assign subset DBs to each CellChat object
+cellchat_LLC_ctl_secreted@DB <- CellChatDB_secreted
+cellchat_LLC_ctl_ecm@DB <- CellChatDB_ECM
+cellchat_LLC_ctl_nps@DB <- CellChatDB_nps
+cellchat_LLC_ctl_ccc@DB <- CellChatDB_ccc
+
+cellchat_LLC_end_secreted@DB <- CellChatDB_secreted
+cellchat_LLC_end_ecm@DB <- CellChatDB_ECM
+cellchat_LLC_end_nps@DB <- CellChatDB_nps
+cellchat_LLC_end_ccc@DB <- CellChatDB_ccc
+
+cellchat_B16_ctl_secreted@DB <- CellChatDB_secreted
+cellchat_B16_ctl_ecm@DB <- CellChatDB_ECM
+cellchat_B16_ctl_nps@DB <- CellChatDB_nps
+cellchat_B16_ctl_ccc@DB <- CellChatDB_ccc
+
+cellchat_B16_end_secreted@DB <- CellChatDB_secreted
+cellchat_B16_end_ecm@DB <- CellChatDB_ECM
+cellchat_B16_end_nps@DB <- CellChatDB_nps
+cellchat_B16_end_ccc@DB <- CellChatDB_ccc
+
+cellchat_C26_ctl_secreted@DB <- CellChatDB_secreted
+cellchat_C26_ctl_ecm@DB <- CellChatDB_ECM
+cellchat_C26_ctl_nps@DB <- CellChatDB_nps
+cellchat_C26_ctl_ccc@DB <- CellChatDB_ccc
+
+cellchat_C26_end_secreted@DB <- CellChatDB_secreted
+cellchat_C26_end_ecm@DB <- CellChatDB_ECM
+cellchat_C26_end_nps@DB <- CellChatDB_nps
+cellchat_C26_end_ccc@DB <- CellChatDB_ccc
+
+cellchat_KPP_KIC_ctl_secreted@DB <- CellChatDB_secreted
+cellchat_KPP_KIC_ctl_ecm@DB <- CellChatDB_ECM
+cellchat_KPP_KIC_ctl_nps@DB <- CellChatDB_nps
+cellchat_KPP_KIC_ctl_ccc@DB <- CellChatDB_ccc
+
+cellchat_KPP_KIC_end_secreted@DB <- CellChatDB_secreted
+cellchat_KPP_KIC_end_ecm@DB <- CellChatDB_ECM
+cellchat_KPP_KIC_end_nps@DB <- CellChatDB_nps
+cellchat_KPP_KIC_end_ccc@DB <- CellChatDB_ccc
+```
+
+
+
+# Subset expression data of signaling genes
+
+```{r, inlcude=FALSE}
+cellchat_LLC_ctl_all <- subsetData(cellchat_LLC_ctl_all)
+cellchat_LLC_ctl_secreted <- subsetData(cellchat_LLC_ctl_secreted)
+cellchat_LLC_ctl_ecm <- subsetData(cellchat_LLC_ctl_ecm)
+cellchat_LLC_ctl_nps <- subsetData(cellchat_LLC_ctl_nps)
+cellchat_LLC_ctl_ccc <- subsetData(cellchat_LLC_ctl_ccc)
+
+cellchat_LLC_end_all <- subsetData(cellchat_LLC_end_all)
+cellchat_LLC_end_secreted <- subsetData(cellchat_LLC_end_secreted)
+cellchat_LLC_end_ecm <- subsetData(cellchat_LLC_end_ecm)
+cellchat_LLC_end_nps <- subsetData(cellchat_LLC_end_nps)
+cellchat_LLC_end_ccc <- subsetData(cellchat_LLC_end_ccc)
+
+cellchat_B16_ctl_all <- subsetData(cellchat_B16_ctl_all)
+cellchat_B16_ctl_secreted <- subsetData(cellchat_B16_ctl_secreted)
+cellchat_B16_ctl_ecm <- subsetData(cellchat_B16_ctl_ecm)
+cellchat_B16_ctl_nps <- subsetData(cellchat_B16_ctl_nps)
+cellchat_B16_ctl_ccc <- subsetData(cellchat_B16_ctl_ccc)
+
+cellchat_B16_end_all <- subsetData(cellchat_B16_end_all)
+cellchat_B16_end_secreted <- subsetData(cellchat_B16_end_secreted)
+cellchat_B16_end_ecm <- subsetData(cellchat_B16_end_ecm)
+cellchat_B16_end_nps <- subsetData(cellchat_B16_end_nps)
+cellchat_B16_end_ccc <- subsetData(cellchat_B16_end_ccc)
+
+cellchat_C26_ctl_all <- subsetData(cellchat_C26_ctl_all)
+cellchat_C26_ctl_secreted <- subsetData(cellchat_C26_ctl_secreted)
+cellchat_C26_ctl_ecm <- subsetData(cellchat_C26_ctl_ecm)
+cellchat_C26_ctl_nps <- subsetData(cellchat_C26_ctl_nps)
+cellchat_C26_ctl_ccc <- subsetData(cellchat_C26_ctl_ccc)
+
+cellchat_C26_end_all <- subsetData(cellchat_C26_end_all)
+cellchat_C26_end_secreted <- subsetData(cellchat_C26_end_secreted)
+cellchat_C26_end_ecm <- subsetData(cellchat_C26_end_ecm)
+cellchat_C26_end_nps <- subsetData(cellchat_C26_end_nps)
+cellchat_C26_end_ccc <- subsetData(cellchat_C26_end_ccc)
+
+cellchat_KPP_KIC_ctl_all <- subsetData(cellchat_KPP_KIC_ctl_all)
+cellchat_KPP_KIC_ctl_secreted <- subsetData(cellchat_KPP_KIC_ctl_secreted)
+cellchat_KPP_KIC_ctl_ecm <- subsetData(cellchat_KPP_KIC_ctl_ecm)
+cellchat_KPP_KIC_ctl_nps <- subsetData(cellchat_KPP_KIC_ctl_nps)
+cellchat_KPP_KIC_ctl_ccc <- subsetData(cellchat_KPP_KIC_ctl_ccc)
+
+cellchat_KPP_KIC_end_all <- subsetData(cellchat_KPP_KIC_end_all)
+cellchat_KPP_KIC_end_secreted <- subsetData(cellchat_KPP_KIC_end_secreted)
+cellchat_KPP_KIC_end_ecm <- subsetData(cellchat_KPP_KIC_end_ecm)
+cellchat_KPP_KIC_end_nps <- subsetData(cellchat_KPP_KIC_end_nps)
+cellchat_KPP_KIC_end_ccc <- subsetData(cellchat_KPP_KIC_end_ccc)
+```
+
+
+
+# CellChat processing
+
+```{r, include=FALSE}
+# identifyOverExpressedGenes
+cellchat_LLC_ctl_all <- identifyOverExpressedGenes(cellchat_LLC_ctl_all)
+cellchat_LLC_ctl_secreted <- identifyOverExpressedGenes(cellchat_LLC_ctl_secreted)
+cellchat_LLC_ctl_ecm <- identifyOverExpressedGenes(cellchat_LLC_ctl_ecm)
+cellchat_LLC_ctl_nps <- identifyOverExpressedGenes(cellchat_LLC_ctl_nps)
+cellchat_LLC_ctl_ccc <- identifyOverExpressedGenes(cellchat_LLC_ctl_ccc)
+
+cellchat_LLC_end_all <- identifyOverExpressedGenes(cellchat_LLC_end_all)
+cellchat_LLC_end_secreted <- identifyOverExpressedGenes(cellchat_LLC_end_secreted)
+cellchat_LLC_end_ecm <- identifyOverExpressedGenes(cellchat_LLC_end_ecm)
+cellchat_LLC_end_nps <- identifyOverExpressedGenes(cellchat_LLC_end_nps)
+cellchat_LLC_end_ccc <- identifyOverExpressedGenes(cellchat_LLC_end_ccc)
+
+cellchat_B16_ctl_all <- identifyOverExpressedGenes(cellchat_B16_ctl_all)
+cellchat_B16_ctl_secreted <- identifyOverExpressedGenes(cellchat_B16_ctl_secreted)
+cellchat_B16_ctl_ecm <- identifyOverExpressedGenes(cellchat_B16_ctl_ecm)
+cellchat_B16_ctl_nps <- identifyOverExpressedGenes(cellchat_B16_ctl_nps)
+cellchat_B16_ctl_ccc <- identifyOverExpressedGenes(cellchat_B16_ctl_ccc)
+
+cellchat_B16_end_all <- identifyOverExpressedGenes(cellchat_B16_end_all)
+cellchat_B16_end_secreted <- identifyOverExpressedGenes(cellchat_B16_end_secreted)
+cellchat_B16_end_ecm <- identifyOverExpressedGenes(cellchat_B16_end_ecm)
+cellchat_B16_end_nps <- identifyOverExpressedGenes(cellchat_B16_end_nps)
+cellchat_B16_end_ccc <- identifyOverExpressedGenes(cellchat_B16_end_ccc)
+
+cellchat_C26_ctl_all <- identifyOverExpressedGenes(cellchat_C26_ctl_all)
+cellchat_C26_ctl_secreted <- identifyOverExpressedGenes(cellchat_C26_ctl_secreted)
+cellchat_C26_ctl_ecm <- identifyOverExpressedGenes(cellchat_C26_ctl_ecm)
+cellchat_C26_ctl_nps <- identifyOverExpressedGenes(cellchat_C26_ctl_nps)
+cellchat_C26_ctl_ccc <- identifyOverExpressedGenes(cellchat_C26_ctl_ccc)
+
+cellchat_C26_end_all <- identifyOverExpressedGenes(cellchat_C26_end_all)
+cellchat_C26_end_secreted <- identifyOverExpressedGenes(cellchat_C26_end_secreted)
+cellchat_C26_end_ecm <- identifyOverExpressedGenes(cellchat_C26_end_ecm)
+cellchat_C26_end_nps <- identifyOverExpressedGenes(cellchat_C26_end_nps)
+cellchat_C26_end_ccc <- identifyOverExpressedGenes(cellchat_C26_end_ccc)
+
+cellchat_KPP_KIC_ctl_all <- identifyOverExpressedGenes(cellchat_KPP_KIC_ctl_all)
+cellchat_KPP_KIC_ctl_secreted <- identifyOverExpressedGenes(cellchat_KPP_KIC_ctl_secreted)
+cellchat_KPP_KIC_ctl_ecm <- identifyOverExpressedGenes(cellchat_KPP_KIC_ctl_ecm)
+cellchat_KPP_KIC_ctl_nps <- identifyOverExpressedGenes(cellchat_KPP_KIC_ctl_nps)
+cellchat_KPP_KIC_ctl_ccc <- identifyOverExpressedGenes(cellchat_KPP_KIC_ctl_ccc)
+
+cellchat_KPP_KIC_end_all <- identifyOverExpressedGenes(cellchat_KPP_KIC_end_all)
+cellchat_KPP_KIC_end_secreted <- identifyOverExpressedGenes(cellchat_KPP_KIC_end_secreted)
+cellchat_KPP_KIC_end_ecm <- identifyOverExpressedGenes(cellchat_KPP_KIC_end_ecm)
+cellchat_KPP_KIC_end_nps <- identifyOverExpressedGenes(cellchat_KPP_KIC_end_nps)
+cellchat_KPP_KIC_end_ccc <- identifyOverExpressedGenes(cellchat_KPP_KIC_end_ccc)
+
+
+# identifyOverExpressedInteractions
+cellchat_LLC_ctl_all <- identifyOverExpressedInteractions(cellchat_LLC_ctl_all)
+cellchat_LLC_ctl_secreted <- identifyOverExpressedInteractions(cellchat_LLC_ctl_secreted)
+cellchat_LLC_ctl_ecm <- identifyOverExpressedInteractions(cellchat_LLC_ctl_ecm)
+cellchat_LLC_ctl_nps <- identifyOverExpressedInteractions(cellchat_LLC_ctl_nps)
+cellchat_LLC_ctl_ccc <- identifyOverExpressedInteractions(cellchat_LLC_ctl_ccc)
+
+cellchat_LLC_end_all <- identifyOverExpressedInteractions(cellchat_LLC_end_all)
+cellchat_LLC_end_secreted <- identifyOverExpressedInteractions(cellchat_LLC_end_secreted)
+cellchat_LLC_end_ecm <- identifyOverExpressedInteractions(cellchat_LLC_end_ecm)
+cellchat_LLC_end_nps <- identifyOverExpressedInteractions(cellchat_LLC_end_nps)
+cellchat_LLC_end_ccc <- identifyOverExpressedInteractions(cellchat_LLC_end_ccc)
+
+cellchat_B16_ctl_all <- identifyOverExpressedInteractions(cellchat_B16_ctl_all)
+cellchat_B16_ctl_secreted <- identifyOverExpressedInteractions(cellchat_B16_ctl_secreted)
+cellchat_B16_ctl_ecm <- identifyOverExpressedInteractions(cellchat_B16_ctl_ecm)
+cellchat_B16_ctl_nps <- identifyOverExpressedInteractions(cellchat_B16_ctl_nps)
+cellchat_B16_ctl_ccc <- identifyOverExpressedInteractions(cellchat_B16_ctl_ccc)
+
+cellchat_B16_end_all <- identifyOverExpressedInteractions(cellchat_B16_end_all)
+cellchat_B16_end_secreted <- identifyOverExpressedInteractions(cellchat_B16_end_secreted)
+cellchat_B16_end_ecm <- identifyOverExpressedInteractions(cellchat_B16_end_ecm)
+cellchat_B16_end_nps <- identifyOverExpressedInteractions(cellchat_B16_end_nps)
+cellchat_B16_end_ccc <- identifyOverExpressedInteractions(cellchat_B16_end_ccc)
+
+cellchat_C26_ctl_all <- identifyOverExpressedInteractions(cellchat_C26_ctl_all)
+cellchat_C26_ctl_secreted <- identifyOverExpressedInteractions(cellchat_C26_ctl_secreted)
+cellchat_C26_ctl_ecm <- identifyOverExpressedInteractions(cellchat_C26_ctl_ecm)
+cellchat_C26_ctl_nps <- identifyOverExpressedInteractions(cellchat_C26_ctl_nps)
+cellchat_C26_ctl_ccc <- identifyOverExpressedInteractions(cellchat_C26_ctl_ccc)
+
+cellchat_C26_end_all <- identifyOverExpressedInteractions(cellchat_C26_end_all)
+cellchat_C26_end_secreted <- identifyOverExpressedInteractions(cellchat_C26_end_secreted)
+cellchat_C26_end_ecm <- identifyOverExpressedInteractions(cellchat_C26_end_ecm)
+cellchat_C26_end_nps <- identifyOverExpressedInteractions(cellchat_C26_end_nps)
+cellchat_C26_end_ccc <- identifyOverExpressedInteractions(cellchat_C26_end_ccc)
+
+cellchat_KPP_KIC_ctl_all <- identifyOverExpressedInteractions(cellchat_KPP_KIC_ctl_all)
+cellchat_KPP_KIC_ctl_secreted <- identifyOverExpressedInteractions(cellchat_KPP_KIC_ctl_secreted)
+cellchat_KPP_KIC_ctl_ecm <- identifyOverExpressedInteractions(cellchat_KPP_KIC_ctl_ecm)
+cellchat_KPP_KIC_ctl_nps <- identifyOverExpressedInteractions(cellchat_KPP_KIC_ctl_nps)
+cellchat_KPP_KIC_ctl_ccc <- identifyOverExpressedInteractions(cellchat_KPP_KIC_ctl_ccc)
+
+cellchat_KPP_KIC_end_all <- identifyOverExpressedInteractions(cellchat_KPP_KIC_end_all)
+cellchat_KPP_KIC_end_secreted <- identifyOverExpressedInteractions(cellchat_KPP_KIC_end_secreted)
+cellchat_KPP_KIC_end_ecm <- identifyOverExpressedInteractions(cellchat_KPP_KIC_end_ecm)
+cellchat_KPP_KIC_end_nps <- identifyOverExpressedInteractions(cellchat_KPP_KIC_end_nps)
+cellchat_KPP_KIC_end_ccc <- identifyOverExpressedInteractions(cellchat_KPP_KIC_end_ccc)
+```
+
+
+
+# Project gene expression data onto protein-protein interaction network
+
+```{r, include=FALSE}
+cellchat_LLC_ctl_all <- projectData(cellchat_LLC_ctl_all, PPI.mouse)
+cellchat_LLC_ctl_secreted <- projectData(cellchat_LLC_ctl_secreted, PPI.mouse)
+cellchat_LLC_ctl_ecm <- projectData(cellchat_LLC_ctl_ecm, PPI.mouse)
+cellchat_LLC_ctl_nps <- projectData(cellchat_LLC_ctl_nps, PPI.mouse)
+cellchat_LLC_ctl_ccc <- projectData(cellchat_LLC_ctl_ccc, PPI.mouse)
+
+cellchat_LLC_end_all <- projectData(cellchat_LLC_end_all, PPI.mouse)
+cellchat_LLC_end_secreted <- projectData(cellchat_LLC_end_secreted, PPI.mouse)
+cellchat_LLC_end_ecm <- projectData(cellchat_LLC_end_ecm, PPI.mouse)
+cellchat_LLC_end_nps <- projectData(cellchat_LLC_end_nps, PPI.mouse)
+cellchat_LLC_end_ccc <- projectData(cellchat_LLC_end_ccc, PPI.mouse)
+
+cellchat_B16_ctl_all <- projectData(cellchat_B16_ctl_all, PPI.mouse)
+cellchat_B16_ctl_secreted <- projectData(cellchat_B16_ctl_secreted, PPI.mouse)
+cellchat_B16_ctl_ecm <- projectData(cellchat_B16_ctl_ecm, PPI.mouse)
+cellchat_B16_ctl_nps <- projectData(cellchat_B16_ctl_nps, PPI.mouse)
+cellchat_B16_ctl_ccc <- projectData(cellchat_B16_ctl_ccc, PPI.mouse)
+
+cellchat_B16_end_all <- projectData(cellchat_B16_end_all, PPI.mouse)
+cellchat_B16_end_secreted <- projectData(cellchat_B16_end_secreted, PPI.mouse)
+cellchat_B16_end_ecm <- projectData(cellchat_B16_end_ecm, PPI.mouse)
+cellchat_B16_end_nps <- projectData(cellchat_B16_end_nps, PPI.mouse)
+cellchat_B16_end_ccc <- projectData(cellchat_B16_end_ccc, PPI.mouse)
+
+cellchat_C26_ctl_all <- projectData(cellchat_C26_ctl_all, PPI.mouse)
+cellchat_C26_ctl_secreted <- projectData(cellchat_C26_ctl_secreted, PPI.mouse)
+cellchat_C26_ctl_ecm <- projectData(cellchat_C26_ctl_ecm, PPI.mouse)
+cellchat_C26_ctl_nps <- projectData(cellchat_C26_ctl_nps, PPI.mouse)
+cellchat_C26_ctl_ccc <- projectData(cellchat_C26_ctl_ccc, PPI.mouse)
+
+cellchat_C26_end_all <- projectData(cellchat_C26_end_all, PPI.mouse)
+cellchat_C26_end_secreted <- projectData(cellchat_C26_end_secreted, PPI.mouse)
+cellchat_C26_end_ecm <- projectData(cellchat_C26_end_ecm, PPI.mouse)
+cellchat_C26_end_nps <- projectData(cellchat_C26_end_nps, PPI.mouse)
+cellchat_C26_end_ccc <- projectData(cellchat_C26_end_ccc, PPI.mouse)
+
+cellchat_KPP_KIC_ctl_all <- projectData(cellchat_KPP_KIC_ctl_all, PPI.mouse)
+cellchat_KPP_KIC_ctl_secreted <- projectData(cellchat_KPP_KIC_ctl_secreted, PPI.mouse)
+cellchat_KPP_KIC_ctl_ecm <- projectData(cellchat_KPP_KIC_ctl_ecm, PPI.mouse)
+cellchat_KPP_KIC_ctl_nps <- projectData(cellchat_KPP_KIC_ctl_nps, PPI.mouse)
+cellchat_KPP_KIC_ctl_ccc <- projectData(cellchat_KPP_KIC_ctl_ccc, PPI.mouse)
+
+cellchat_KPP_KIC_end_all <- projectData(cellchat_KPP_KIC_end_all, PPI.mouse)
+cellchat_KPP_KIC_end_secreted <- projectData(cellchat_KPP_KIC_end_secreted, PPI.mouse)
+cellchat_KPP_KIC_end_ecm <- projectData(cellchat_KPP_KIC_end_ecm, PPI.mouse)
+cellchat_KPP_KIC_end_nps <- projectData(cellchat_KPP_KIC_end_nps, PPI.mouse)
+cellchat_KPP_KIC_end_ccc <- projectData(cellchat_KPP_KIC_end_ccc, PPI.mouse)
+```
+
+
+
+# Remove unused levels
+
+```{r, include=FALSE}
+cellchat_LLC_ctl_all@idents <- droplevels(cellchat_LLC_ctl_all@idents, exclude = setdiff(levels(cellchat_LLC_ctl_meta$group), unique(cellchat_LLC_ctl_meta$group)))
+cellchat_LLC_ctl_secreted@idents <- droplevels(cellchat_LLC_ctl_secreted@idents, exclude = setdiff(levels(cellchat_LLC_ctl_meta$group), unique(cellchat_LLC_ctl_meta$group)))
+cellchat_LLC_ctl_ecm@idents <- droplevels(cellchat_LLC_ctl_ecm@idents, exclude = setdiff(levels(cellchat_LLC_ctl_meta$group), unique(cellchat_LLC_ctl_meta$group)))
+cellchat_LLC_ctl_nps@idents <- droplevels(cellchat_LLC_ctl_nps@idents, exclude = setdiff(levels(cellchat_LLC_ctl_meta$group), unique(cellchat_LLC_ctl_meta$group)))
+cellchat_LLC_ctl_ccc@idents <- droplevels(cellchat_LLC_ctl_ccc@idents, exclude = setdiff(levels(cellchat_LLC_ctl_meta$group), unique(cellchat_LLC_ctl_meta$group)))
+
+cellchat_LLC_end_all@idents <- droplevels(cellchat_LLC_end_all@idents, exclude = setdiff(levels(cellchat_LLC_end_meta$group), unique(cellchat_LLC_end_meta$group)))
+cellchat_LLC_end_secreted@idents <- droplevels(cellchat_LLC_end_secreted@idents, exclude = setdiff(levels(cellchat_LLC_end_meta$group), unique(cellchat_LLC_end_meta$group)))
+cellchat_LLC_end_ecm@idents <- droplevels(cellchat_LLC_end_ecm@idents, exclude = setdiff(levels(cellchat_LLC_end_meta$group), unique(cellchat_LLC_end_meta$group)))
+cellchat_LLC_end_nps@idents <- droplevels(cellchat_LLC_end_nps@idents, exclude = setdiff(levels(cellchat_LLC_end_meta$group), unique(cellchat_LLC_end_meta$group)))
+cellchat_LLC_end_ccc@idents <- droplevels(cellchat_LLC_end_ccc@idents, exclude = setdiff(levels(cellchat_LLC_end_meta$group), unique(cellchat_LLC_end_meta$group)))
+
+cellchat_B16_ctl_all@idents <- droplevels(cellchat_B16_ctl_all@idents, exclude = setdiff(levels(cellchat_B16_ctl_meta$group), unique(cellchat_B16_ctl_meta$group)))
+cellchat_B16_ctl_secreted@idents <- droplevels(cellchat_B16_ctl_secreted@idents, exclude = setdiff(levels(cellchat_B16_ctl_meta$group), unique(cellchat_B16_ctl_meta$group)))
+cellchat_B16_ctl_ecm@idents <- droplevels(cellchat_B16_ctl_ecm@idents, exclude = setdiff(levels(cellchat_B16_ctl_meta$group), unique(cellchat_B16_ctl_meta$group)))
+cellchat_B16_ctl_nps@idents <- droplevels(cellchat_B16_ctl_nps@idents, exclude = setdiff(levels(cellchat_B16_ctl_meta$group), unique(cellchat_B16_ctl_meta$group)))
+cellchat_B16_ctl_ccc@idents <- droplevels(cellchat_B16_ctl_ccc@idents, exclude = setdiff(levels(cellchat_B16_ctl_meta$group), unique(cellchat_B16_ctl_meta$group)))
+
+cellchat_B16_end_all@idents <- droplevels(cellchat_B16_end_all@idents, exclude = setdiff(levels(cellchat_B16_end_meta$group), unique(cellchat_B16_end_meta$group)))
+cellchat_B16_end_secreted@idents <- droplevels(cellchat_B16_end_secreted@idents, exclude = setdiff(levels(cellchat_B16_end_meta$group), unique(cellchat_B16_end_meta$group)))
+cellchat_B16_end_ecm@idents <- droplevels(cellchat_B16_end_ecm@idents, exclude = setdiff(levels(cellchat_B16_end_meta$group), unique(cellchat_B16_end_meta$group)))
+cellchat_B16_end_nps@idents <- droplevels(cellchat_B16_end_nps@idents, exclude = setdiff(levels(cellchat_B16_end_meta$group), unique(cellchat_B16_end_meta$group)))
+cellchat_B16_end_ccc@idents <- droplevels(cellchat_B16_end_ccc@idents, exclude = setdiff(levels(cellchat_B16_end_meta$group), unique(cellchat_B16_end_meta$group)))
+
+cellchat_C26_ctl_all@idents <- droplevels(cellchat_C26_ctl_all@idents, exclude = setdiff(levels(cellchat_C26_ctl_meta$group), unique(cellchat_C26_ctl_meta$group)))
+cellchat_C26_ctl_secreted@idents <- droplevels(cellchat_C26_ctl_secreted@idents, exclude = setdiff(levels(cellchat_C26_ctl_meta$group), unique(cellchat_C26_ctl_meta$group)))
+cellchat_C26_ctl_ecm@idents <- droplevels(cellchat_C26_ctl_ecm@idents, exclude = setdiff(levels(cellchat_C26_ctl_meta$group), unique(cellchat_C26_ctl_meta$group)))
+cellchat_C26_ctl_nps@idents <- droplevels(cellchat_C26_ctl_nps@idents, exclude = setdiff(levels(cellchat_C26_ctl_meta$group), unique(cellchat_C26_ctl_meta$group)))
+cellchat_C26_ctl_ccc@idents <- droplevels(cellchat_C26_ctl_ccc@idents, exclude = setdiff(levels(cellchat_C26_ctl_meta$group), unique(cellchat_C26_ctl_meta$group)))
+
+cellchat_C26_end_all@idents <- droplevels(cellchat_C26_end_all@idents, exclude = setdiff(levels(cellchat_C26_end_meta$group), unique(cellchat_C26_end_meta$group)))
+cellchat_C26_end_secreted@idents <- droplevels(cellchat_C26_end_secreted@idents, exclude = setdiff(levels(cellchat_C26_end_meta$group), unique(cellchat_C26_end_meta$group)))
+cellchat_C26_end_ecm@idents <- droplevels(cellchat_C26_end_ecm@idents, exclude = setdiff(levels(cellchat_C26_end_meta$group), unique(cellchat_C26_end_meta$group)))
+cellchat_C26_end_nps@idents <- droplevels(cellchat_C26_end_nps@idents, exclude = setdiff(levels(cellchat_C26_end_meta$group), unique(cellchat_C26_end_meta$group)))
+cellchat_C26_end_ccc@idents <- droplevels(cellchat_C26_end_ccc@idents, exclude = setdiff(levels(cellchat_C26_end_meta$group), unique(cellchat_C26_end_meta$group)))
+
+cellchat_KPP_KIC_ctl_all@idents <- droplevels(cellchat_KPP_KIC_ctl_all@idents, exclude = setdiff(levels(cellchat_KPP_KIC_ctl_meta$group), unique(cellchat_KPP_KIC_ctl_meta$group)))
+cellchat_KPP_KIC_ctl_secreted@idents <- droplevels(cellchat_KPP_KIC_ctl_secreted@idents, exclude = setdiff(levels(cellchat_KPP_KIC_ctl_meta$group), unique(cellchat_KPP_KIC_ctl_meta$group)))
+cellchat_KPP_KIC_ctl_ecm@idents <- droplevels(cellchat_KPP_KIC_ctl_ecm@idents, exclude = setdiff(levels(cellchat_KPP_KIC_ctl_meta$group), unique(cellchat_KPP_KIC_ctl_meta$group)))
+cellchat_KPP_KIC_ctl_nps@idents <- droplevels(cellchat_KPP_KIC_ctl_nps@idents, exclude = setdiff(levels(cellchat_KPP_KIC_ctl_meta$group), unique(cellchat_KPP_KIC_ctl_meta$group)))
+cellchat_KPP_KIC_ctl_ccc@idents <- droplevels(cellchat_KPP_KIC_ctl_ccc@idents, exclude = setdiff(levels(cellchat_KPP_KIC_ctl_meta$group), unique(cellchat_KPP_KIC_ctl_meta$group)))
+
+cellchat_KPP_KIC_end_all@idents <- droplevels(cellchat_KPP_KIC_end_all@idents, exclude = setdiff(levels(cellchat_KPP_KIC_end_meta$group), unique(cellchat_KPP_KIC_end_meta$group)))
+cellchat_KPP_KIC_end_secreted@idents <- droplevels(cellchat_KPP_KIC_end_secreted@idents, exclude = setdiff(levels(cellchat_KPP_KIC_end_meta$group), unique(cellchat_KPP_KIC_end_meta$group)))
+cellchat_KPP_KIC_end_ecm@idents <- droplevels(cellchat_KPP_KIC_end_ecm@idents, exclude = setdiff(levels(cellchat_KPP_KIC_end_meta$group), unique(cellchat_KPP_KIC_end_meta$group)))
+cellchat_KPP_KIC_end_nps@idents <- droplevels(cellchat_KPP_KIC_end_nps@idents, exclude = setdiff(levels(cellchat_KPP_KIC_end_meta$group), unique(cellchat_KPP_KIC_end_meta$group)))
+cellchat_KPP_KIC_end_ccc@idents <- droplevels(cellchat_KPP_KIC_end_ccc@idents, exclude = setdiff(levels(cellchat_KPP_KIC_end_meta$group), unique(cellchat_KPP_KIC_end_meta$group)))
+```
+
+
+
+# Remove unused objects from environment
+
+```{r, include=FALSE}
+rm(B16_ctl, B16_end, LLC_ctl, LLC_end, C26_ctl, C26_end, KPP_KIC_ctl, KPP_KIC_end, data_input_B16_ctl, data_input_B16_end, data_input_LLC_ctl, data_input_LLC_end, data_input_C26_ctl, data_input_C26_end, data_input_KPP_KIC_ctl, data_input_KPP_KIC_end, B16_ctl_common_cells, B16_end_common_cells, C26_ctl_common_cells, C26_end_common_cells, KPP_KIC_ctl_common_cells, KPP_KIC_end_common_cells, LLC_ctl_common_cells, LLC_end_common_cells, B16_ctl_muscle, B16_end_muscle, C26_ctl_muscle, C26_end_muscle, KPP_KIC_ctl_muscle, KPP_KIC_end_muscle, LLC_ctl_muscle, LLC_end_muscle, B16_tumour, KPC_tumour, MC38_tumour, LLC_tumour, CellChatDB_secreted, CellChatDB_ECM, CellChatDB_nps, CellChatDB_ccc)
+```
+
+
+
+# Identify communication probabilities
+
+```{r, include=FALSE}
+cellchat_LLC_ctl_all <- computeCommunProb(cellchat_LLC_ctl_all)
+cellchat_LLC_ctl_all <- computeCommunProbPathway(cellchat_LLC_ctl_all)
+cellchat_LLC_ctl_all <- aggregateNet(cellchat_LLC_ctl_all)
+cellchat_LLC_ctl_all <- netAnalysis_computeCentrality(cellchat_LLC_ctl_all, slot.name = "netP")
+
+cellchat_LLC_ctl_secreted <- computeCommunProb(cellchat_LLC_ctl_secreted)
+cellchat_LLC_ctl_secreted <- computeCommunProbPathway(cellchat_LLC_ctl_secreted)
+cellchat_LLC_ctl_secreted <- aggregateNet(cellchat_LLC_ctl_secreted)
+cellchat_LLC_ctl_secreted <- netAnalysis_computeCentrality(cellchat_LLC_ctl_secreted, slot.name = "netP")
+
+cellchat_LLC_ctl_ecm <- computeCommunProb(cellchat_LLC_ctl_ecm)
+cellchat_LLC_ctl_ecm <- computeCommunProbPathway(cellchat_LLC_ctl_ecm)
+cellchat_LLC_ctl_ecm <- aggregateNet(cellchat_LLC_ctl_ecm)
+cellchat_LLC_ctl_ecm <- netAnalysis_computeCentrality(cellchat_LLC_ctl_ecm, slot.name = "netP")
+
+cellchat_LLC_ctl_nps <- computeCommunProb(cellchat_LLC_ctl_nps)
+cellchat_LLC_ctl_nps <- computeCommunProbPathway(cellchat_LLC_ctl_nps)
+cellchat_LLC_ctl_nps <- aggregateNet(cellchat_LLC_ctl_nps)
+cellchat_LLC_ctl_nps <- netAnalysis_computeCentrality(cellchat_LLC_ctl_nps, slot.name = "netP")
+
+cellchat_LLC_ctl_ccc <- computeCommunProb(cellchat_LLC_ctl_ccc)
+cellchat_LLC_ctl_ccc <- computeCommunProbPathway(cellchat_LLC_ctl_ccc)
+cellchat_LLC_ctl_ccc <- aggregateNet(cellchat_LLC_ctl_ccc)
+cellchat_LLC_ctl_ccc <- netAnalysis_computeCentrality(cellchat_LLC_ctl_ccc, slot.name = "netP")
+
+cellchat_LLC_end_all <- computeCommunProb(cellchat_LLC_end_all)
+cellchat_LLC_end_all <- computeCommunProbPathway(cellchat_LLC_end_all)
+cellchat_LLC_end_all <- aggregateNet(cellchat_LLC_end_all)
+cellchat_LLC_end_all <- netAnalysis_computeCentrality(cellchat_LLC_end_all, slot.name = "netP")
+
+cellchat_LLC_end_secreted <- computeCommunProb(cellchat_LLC_end_secreted)
+cellchat_LLC_end_secreted <- computeCommunProbPathway(cellchat_LLC_end_secreted)
+cellchat_LLC_end_secreted <- aggregateNet(cellchat_LLC_end_secreted)
+cellchat_LLC_end_secreted <- netAnalysis_computeCentrality(cellchat_LLC_end_secreted, slot.name = "netP")
+
+cellchat_LLC_end_ecm <- computeCommunProb(cellchat_LLC_end_ecm)
+cellchat_LLC_end_ecm <- computeCommunProbPathway(cellchat_LLC_end_ecm)
+cellchat_LLC_end_ecm <- aggregateNet(cellchat_LLC_end_ecm)
+cellchat_LLC_end_ecm <- netAnalysis_computeCentrality(cellchat_LLC_end_ecm, slot.name = "netP")
+
+cellchat_LLC_end_nps <- computeCommunProb(cellchat_LLC_end_nps)
+cellchat_LLC_end_nps <- computeCommunProbPathway(cellchat_LLC_end_nps)
+cellchat_LLC_end_nps <- aggregateNet(cellchat_LLC_end_nps)
+cellchat_LLC_end_nps <- netAnalysis_computeCentrality(cellchat_LLC_end_nps, slot.name = "netP")
+
+cellchat_LLC_end_ccc <- computeCommunProb(cellchat_LLC_end_ccc)
+cellchat_LLC_end_ccc <- computeCommunProbPathway(cellchat_LLC_end_ccc)
+cellchat_LLC_end_ccc <- aggregateNet(cellchat_LLC_end_ccc)
+cellchat_LLC_end_ccc <- netAnalysis_computeCentrality(cellchat_LLC_end_ccc, slot.name = "netP")
+
+cellchat_B16_ctl_all <- computeCommunProb(cellchat_B16_ctl_all)
+cellchat_B16_ctl_all <- computeCommunProbPathway(cellchat_B16_ctl_all)
+cellchat_B16_ctl_all <- aggregateNet(cellchat_B16_ctl_all)
+cellchat_B16_ctl_all <- netAnalysis_computeCentrality(cellchat_B16_ctl_all, slot.name = "netP")
+
+cellchat_B16_ctl_secreted <- computeCommunProb(cellchat_B16_ctl_secreted)
+cellchat_B16_ctl_secreted <- computeCommunProbPathway(cellchat_B16_ctl_secreted)
+cellchat_B16_ctl_secreted <- aggregateNet(cellchat_B16_ctl_secreted)
+cellchat_B16_ctl_secreted <- netAnalysis_computeCentrality(cellchat_B16_ctl_secreted, slot.name = "netP")
+
+cellchat_B16_ctl_ecm <- computeCommunProb(cellchat_B16_ctl_ecm)
+cellchat_B16_ctl_ecm <- computeCommunProbPathway(cellchat_B16_ctl_ecm)
+cellchat_B16_ctl_ecm <- aggregateNet(cellchat_B16_ctl_ecm)
+cellchat_B16_ctl_ecm <- netAnalysis_computeCentrality(cellchat_B16_ctl_ecm, slot.name = "netP")
+
+cellchat_B16_ctl_nps <- computeCommunProb(cellchat_B16_ctl_nps)
+cellchat_B16_ctl_nps <- computeCommunProbPathway(cellchat_B16_ctl_nps)
+cellchat_B16_ctl_nps <- aggregateNet(cellchat_B16_ctl_nps)
+cellchat_B16_ctl_nps <- netAnalysis_computeCentrality(cellchat_B16_ctl_nps, slot.name = "netP")
+
+cellchat_B16_ctl_ccc <- computeCommunProb(cellchat_B16_ctl_ccc)
+cellchat_B16_ctl_ccc <- computeCommunProbPathway(cellchat_B16_ctl_ccc)
+cellchat_B16_ctl_ccc <- aggregateNet(cellchat_B16_ctl_ccc)
+cellchat_B16_ctl_ccc <- netAnalysis_computeCentrality(cellchat_B16_ctl_ccc, slot.name = "netP")
+
+cellchat_B16_end_all <- computeCommunProb(cellchat_B16_end_all)
+cellchat_B16_end_all <- computeCommunProbPathway(cellchat_B16_end_all)
+cellchat_B16_end_all <- aggregateNet(cellchat_B16_end_all)
+cellchat_B16_end_all <- netAnalysis_computeCentrality(cellchat_B16_end_all, slot.name = "netP")
+
+cellchat_B16_end_secreted <- computeCommunProb(cellchat_B16_end_secreted)
+cellchat_B16_end_secreted <- computeCommunProbPathway(cellchat_B16_end_secreted)
+cellchat_B16_end_secreted <- aggregateNet(cellchat_B16_end_secreted)
+cellchat_B16_end_secreted <- netAnalysis_computeCentrality(cellchat_B16_end_secreted, slot.name = "netP")
+
+cellchat_B16_end_ecm <- computeCommunProb(cellchat_B16_end_ecm)
+cellchat_B16_end_ecm <- computeCommunProbPathway(cellchat_B16_end_ecm)
+cellchat_B16_end_ecm <- aggregateNet(cellchat_B16_end_ecm)
+cellchat_B16_end_ecm <- netAnalysis_computeCentrality(cellchat_B16_end_ecm, slot.name = "netP")
+
+cellchat_B16_end_nps <- computeCommunProb(cellchat_B16_end_nps)
+cellchat_B16_end_nps <- computeCommunProbPathway(cellchat_B16_end_nps)
+cellchat_B16_end_nps <- aggregateNet(cellchat_B16_end_nps)
+cellchat_B16_end_nps <- netAnalysis_computeCentrality(cellchat_B16_end_nps, slot.name = "netP")
+
+cellchat_B16_end_ccc <- computeCommunProb(cellchat_B16_end_ccc)
+cellchat_B16_end_ccc <- computeCommunProbPathway(cellchat_B16_end_ccc)
+cellchat_B16_end_ccc <- aggregateNet(cellchat_B16_end_ccc)
+cellchat_B16_end_ccc <- netAnalysis_computeCentrality(cellchat_B16_end_ccc, slot.name = "netP")
+
+cellchat_C26_ctl_all <- computeCommunProb(cellchat_C26_ctl_all)
+cellchat_C26_ctl_all <- computeCommunProbPathway(cellchat_C26_ctl_all)
+cellchat_C26_ctl_all <- aggregateNet(cellchat_C26_ctl_all)
+cellchat_C26_ctl_all <- netAnalysis_computeCentrality(cellchat_C26_ctl_all, slot.name = "netP")
+
+cellchat_C26_ctl_secreted <- computeCommunProb(cellchat_C26_ctl_secreted)
+cellchat_C26_ctl_secreted <- computeCommunProbPathway(cellchat_C26_ctl_secreted)
+cellchat_C26_ctl_secreted <- aggregateNet(cellchat_C26_ctl_secreted)
+cellchat_C26_ctl_secreted <- netAnalysis_computeCentrality(cellchat_C26_ctl_secreted, slot.name = "netP")
+
+cellchat_C26_ctl_ecm <- computeCommunProb(cellchat_C26_ctl_ecm)
+cellchat_C26_ctl_ecm <- computeCommunProbPathway(cellchat_C26_ctl_ecm)
+cellchat_C26_ctl_ecm <- aggregateNet(cellchat_C26_ctl_ecm)
+cellchat_C26_ctl_ecm <- netAnalysis_computeCentrality(cellchat_C26_ctl_ecm, slot.name = "netP")
+
+cellchat_C26_ctl_nps <- computeCommunProb(cellchat_C26_ctl_nps)
+cellchat_C26_ctl_nps <- computeCommunProbPathway(cellchat_C26_ctl_nps)
+cellchat_C26_ctl_nps <- aggregateNet(cellchat_C26_ctl_nps)
+cellchat_C26_ctl_nps <- netAnalysis_computeCentrality(cellchat_C26_ctl_nps, slot.name = "netP")
+
+cellchat_C26_ctl_ccc <- computeCommunProb(cellchat_C26_ctl_ccc)
+cellchat_C26_ctl_ccc <- computeCommunProbPathway(cellchat_C26_ctl_ccc)
+cellchat_C26_ctl_ccc <- aggregateNet(cellchat_C26_ctl_ccc)
+cellchat_C26_ctl_ccc <- netAnalysis_computeCentrality(cellchat_C26_ctl_ccc, slot.name = "netP")
+
+cellchat_C26_end_all <- computeCommunProb(cellchat_C26_end_all)
+cellchat_C26_end_all <- computeCommunProbPathway(cellchat_C26_end_all)
+cellchat_C26_end_all <- aggregateNet(cellchat_C26_end_all)
+cellchat_C26_end_all <- netAnalysis_computeCentrality(cellchat_C26_end_all, slot.name = "netP")
+
+cellchat_C26_end_secreted <- computeCommunProb(cellchat_C26_end_secreted)
+cellchat_C26_end_secreted <- computeCommunProbPathway(cellchat_C26_end_secreted)
+cellchat_C26_end_secreted <- aggregateNet(cellchat_C26_end_secreted)
+cellchat_C26_end_secreted <- netAnalysis_computeCentrality(cellchat_C26_end_secreted, slot.name = "netP")
+
+cellchat_C26_end_ecm <- computeCommunProb(cellchat_C26_end_ecm)
+cellchat_C26_end_ecm <- computeCommunProbPathway(cellchat_C26_end_ecm)
+cellchat_C26_end_ecm <- aggregateNet(cellchat_C26_end_ecm)
+cellchat_C26_end_ecm <- netAnalysis_computeCentrality(cellchat_C26_end_ecm, slot.name = "netP")
+
+cellchat_C26_end_nps <- computeCommunProb(cellchat_C26_end_nps)
+cellchat_C26_end_nps <- computeCommunProbPathway(cellchat_C26_end_nps)
+cellchat_C26_end_nps <- aggregateNet(cellchat_C26_end_nps)
+cellchat_C26_end_nps <- netAnalysis_computeCentrality(cellchat_C26_end_nps, slot.name = "netP")
+
+cellchat_C26_end_ccc <- computeCommunProb(cellchat_C26_end_ccc)
+cellchat_C26_end_ccc <- computeCommunProbPathway(cellchat_C26_end_ccc)
+cellchat_C26_end_ccc <- aggregateNet(cellchat_C26_end_ccc)
+cellchat_C26_end_ccc <- netAnalysis_computeCentrality(cellchat_C26_end_ccc, slot.name = "netP")
+
+cellchat_KPP_KIC_ctl_all <- computeCommunProb(cellchat_KPP_KIC_ctl_all)
+cellchat_KPP_KIC_ctl_all <- computeCommunProbPathway(cellchat_KPP_KIC_ctl_all)
+cellchat_KPP_KIC_ctl_all <- aggregateNet(cellchat_KPP_KIC_ctl_all)
+cellchat_KPP_KIC_ctl_all <- netAnalysis_computeCentrality(cellchat_KPP_KIC_ctl_all, slot.name = "netP")
+
+cellchat_KPP_KIC_ctl_secreted <- computeCommunProb(cellchat_KPP_KIC_ctl_secreted)
+cellchat_KPP_KIC_ctl_secreted <- computeCommunProbPathway(cellchat_KPP_KIC_ctl_secreted)
+cellchat_KPP_KIC_ctl_secreted <- aggregateNet(cellchat_KPP_KIC_ctl_secreted)
+cellchat_KPP_KIC_ctl_secreted <- netAnalysis_computeCentrality(cellchat_KPP_KIC_ctl_secreted, slot.name = "netP")
+
+cellchat_KPP_KIC_ctl_ecm <- computeCommunProb(cellchat_KPP_KIC_ctl_ecm)
+cellchat_KPP_KIC_ctl_ecm <- computeCommunProbPathway(cellchat_KPP_KIC_ctl_ecm)
+cellchat_KPP_KIC_ctl_ecm <- aggregateNet(cellchat_KPP_KIC_ctl_ecm)
+cellchat_KPP_KIC_ctl_ecm <- netAnalysis_computeCentrality(cellchat_KPP_KIC_ctl_ecm, slot.name = "netP")
+
+cellchat_KPP_KIC_ctl_nps <- computeCommunProb(cellchat_KPP_KIC_ctl_nps)
+cellchat_KPP_KIC_ctl_nps <- computeCommunProbPathway(cellchat_KPP_KIC_ctl_nps)
+cellchat_KPP_KIC_ctl_nps <- aggregateNet(cellchat_KPP_KIC_ctl_nps)
+cellchat_KPP_KIC_ctl_nps <- netAnalysis_computeCentrality(cellchat_KPP_KIC_ctl_nps, slot.name = "netP")
+
+cellchat_KPP_KIC_ctl_ccc <- computeCommunProb(cellchat_KPP_KIC_ctl_ccc)
+cellchat_KPP_KIC_ctl_ccc <- computeCommunProbPathway(cellchat_KPP_KIC_ctl_ccc)
+cellchat_KPP_KIC_ctl_ccc <- aggregateNet(cellchat_KPP_KIC_ctl_ccc)
+cellchat_KPP_KIC_ctl_ccc <- netAnalysis_computeCentrality(cellchat_KPP_KIC_ctl_ccc, slot.name = "netP")
+
+cellchat_KPP_KIC_end_all <- computeCommunProb(cellchat_KPP_KIC_end_all)
+cellchat_KPP_KIC_end_all <- computeCommunProbPathway(cellchat_KPP_KIC_end_all)
+cellchat_KPP_KIC_end_all <- aggregateNet(cellchat_KPP_KIC_end_all)
+cellchat_KPP_KIC_end_all <- netAnalysis_computeCentrality(cellchat_KPP_KIC_end_all, slot.name = "netP")
+
+cellchat_KPP_KIC_end_secreted <- computeCommunProb(cellchat_KPP_KIC_end_secreted)
+cellchat_KPP_KIC_end_secreted <- computeCommunProbPathway(cellchat_KPP_KIC_end_secreted)
+cellchat_KPP_KIC_end_secreted <- aggregateNet(cellchat_KPP_KIC_end_secreted)
+cellchat_KPP_KIC_end_secreted <- netAnalysis_computeCentrality(cellchat_KPP_KIC_end_secreted, slot.name = "netP")
+
+cellchat_KPP_KIC_end_ecm <- computeCommunProb(cellchat_KPP_KIC_end_ecm)
+cellchat_KPP_KIC_end_ecm <- computeCommunProbPathway(cellchat_KPP_KIC_end_ecm)
+cellchat_KPP_KIC_end_ecm <- aggregateNet(cellchat_KPP_KIC_end_ecm)
+cellchat_KPP_KIC_end_ecm <- netAnalysis_computeCentrality(cellchat_KPP_KIC_end_ecm, slot.name = "netP")
+
+cellchat_KPP_KIC_end_nps <- computeCommunProb(cellchat_KPP_KIC_end_nps)
+cellchat_KPP_KIC_end_nps <- computeCommunProbPathway(cellchat_KPP_KIC_end_nps)
+cellchat_KPP_KIC_end_nps <- aggregateNet(cellchat_KPP_KIC_end_nps)
+cellchat_KPP_KIC_end_nps <- netAnalysis_computeCentrality(cellchat_KPP_KIC_end_nps, slot.name = "netP")
+
+cellchat_KPP_KIC_end_ccc <- computeCommunProb(cellchat_KPP_KIC_end_ccc)
+cellchat_KPP_KIC_end_ccc <- computeCommunProbPathway(cellchat_KPP_KIC_end_ccc)
+cellchat_KPP_KIC_end_ccc <- aggregateNet(cellchat_KPP_KIC_end_ccc)
+cellchat_KPP_KIC_end_ccc <- netAnalysis_computeCentrality(cellchat_KPP_KIC_end_ccc, slot.name = "netP")
+```
+
+
+
+# Set colours
+
+```{r, include=FALSE}
+LLC_ctl_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D" 
+)
+
+LLC_end_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D",
+    "Tumour Tumour cells"         = "#C0C0C0",
+    "Tumour ECs/CAFs"             = "#BFFF00",
+    "Tumour Dendritic cells"      = "#B84D9E",
+    "Tumour Monocytes"            = "#80E5FF",
+    "Tumour Macrophages"          = "#1E90FF",
+    "Tumour Neutrophils"          = "#4169E1",
+    "Tumour T cells/NK cells"     = "#8E2ABB"
+)
+
+B16_ctl_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D" 
+)
+
+B16_end_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D",
+    "Tumour Tumour cells"         = "#C0C0C0",
+    "Tumour ECs/CAFs"             = "#BFFF00",
+    "Tumour Monocytes/macrophages" = "#4BB5FF"
+)
+
+C26_ctl_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D" 
+)
+
+C26_end_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D",
+    "Tumour CAFs"                 = "#7CFC00",
+    "Tumour Monocytes"            = "#80E5FF",
+    "Tumour Macrophages"          = "#1E90FF",
+    "Tumour Neutrophils"          = "#4169E1",
+    "Tumour T cells"              = "#B44CFF",
+    "Tumour NK cells"             = "#5B0E8A"
+)
+
+KPP_KIC_ctl_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D" 
+)
+
+KPP_KIC_end_cluster_colours <- c(
+    "Muscle Satellite cells"      = "#FF7FBF",
+    "Muscle Myoblasts"            = "#FF3F80",
+    "Muscle Myonuclei"            = "#E00000",
+    "Muscle Endothelial cells"    = "#FFFF00",
+    "Muscle vSMCs"                = "#BC9D00",
+    "Muscle Pericytes"            = "#8B5A2B",
+    "Muscle FAPs"                 = "#7CFC00",
+    "Muscle Tenocytes"            = "#228B22",
+    "Muscle Platelets"            = "#D46A6A", 
+    "Muscle Mast cells"           = "#C85C8C", 
+    "Muscle Dendritic cells"      = "#B84D9E", 
+    "Muscle Monocytes"            = "#80E5FF",
+    "Muscle Macrophages"          = "#1E90FF",
+    "Muscle Neutrophils"          = "#4169E1",
+    "Muscle B cells"              = "#C9A2FF",
+    "Muscle T cells"              = "#B44CFF",
+    "Muscle NK cells"             = "#5B0E8A",
+    "Muscle Neural/glial cells"   = "#FF7F00",
+    "Muscle Schwann cells"        = "#FFA64D",
+    "Tumour Tumour cells"         = "#C0C0C0",
+    "Tumour Endothelial cells"    = "#FFFF00",
+    "Tumour CAFs"                 = "#7CFC00",
+    "Tumour Monocytes"            = "#80E5FF",
+    "Tumour Macrophages"          = "#1E90FF"
+)
+```
+
+
+
+# Rename "Tumour Endothelial cells/CAFS" to "Tumour ECs/CAFs"
+
+```{r, include=FALSE}
+rownames(cellchat_B16_end_secreted@net$count)[
+  rownames(cellchat_B16_end_secreted@net$count) == "Tumour Endothelial cells/CAFs"
+] <- "Tumour ECs/CAFs"
+
+colnames(cellchat_B16_end_secreted@net$count)[
+  colnames(cellchat_B16_end_secreted@net$count) == "Tumour Endothelial cells/CAFs"
+] <- "Tumour ECs/CAFs"
+```
+
+
+
+# -----------------------------------------------------------------------------
+# SAVED HERE ------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat_split.RData")
+```
+
+
+# Get LR counts matrices within the muscle for each tumour condition (controls and tumour-bearing)
+
+## B16
+
+```{r, include=FALSE}
+B16_ctl_all_counts_mat <- cellchat_B16_ctl_all@net$count[
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+
+B16_end_all_counts_mat <- cellchat_B16_end_all@net$count[
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+```
+
+
+## C26
+
+```{r, include=FALSE}
+C26_ctl_all_counts_mat <- cellchat_C26_ctl_all@net$count[
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+
+C26_end_all_counts_mat <- cellchat_C26_end_all@net$count[
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+```
+
+
+## LLC
+
+```{r, include=FALSE}
+LLC_ctl_all_counts_mat <- cellchat_LLC_ctl_all@net$count[
+  c("Muscle Satellite cells","Muscle Myoblasts","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myoblasts","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+
+LLC_end_all_counts_mat <- cellchat_LLC_end_all@net$count[
+  c("Muscle Satellite cells","Muscle Myoblasts","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myoblasts","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+```
+
+
+## KPP_KIC
+
+```{r, include=FALSE}
+KPP_KIC_ctl_all_counts_mat <- cellchat_KPP_KIC_ctl_all@net$count[
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+
+KPP_KIC_end_all_counts_mat <- cellchat_KPP_KIC_end_all@net$count[
+  c("Muscle Satellite cells","Muscle Myoblasts","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells"),
+  c("Muscle Satellite cells","Muscle Myoblasts","Muscle Myonuclei",
+    "Muscle Endothelial cells","Muscle vSMCs","Muscle Pericytes",
+    "Muscle FAPs","Muscle Tenocytes","Muscle Platelets","Muscle Mast cells",
+    "Muscle Dendritic cells","Muscle Monocytes","Muscle Macrophages",
+    "Muscle Neutrophils","Muscle B cells","Muscle T cells","Muscle NK cells",
+    "Muscle Neural/glial cells","Muscle Schwann cells")
+]
+```
+
+
+## Write.csv
+
+```{r, include=FALSE}
+write.csv(B16_ctl_all_counts_mat,
+          file = "B16_ctl_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(B16_end_all_counts_mat,
+          file = "B16_end_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(C26_ctl_all_counts_mat,
+          file = "C26_ctl_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(C26_end_all_counts_mat,
+          file = "C26_end_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(LLC_ctl_all_counts_mat,
+          file = "LLC_ctl_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(LLC_end_all_counts_mat,
+          file = "LLC_end_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(KPP_KIC_ctl_all_counts_mat,
+          file = "KPP_KIC_ctl_all_counts_mat.csv",
+          row.names = TRUE)
+
+write.csv(KPP_KIC_end_all_counts_mat,
+          file = "KPP_KIC_end_all_counts_mat.csv",
+          row.names = TRUE)
+```
