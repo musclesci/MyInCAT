@@ -1,0 +1,1471 @@
+---
+title: "hpa_analyses"
+author: "Alex Brown"
+date: "2026-03-04"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(ggplot2)
+library(biomaRt)
+library(Seurat)
+library(SeuratWrappers)
+library(Biobase)
+library(BiocGenerics)
+library(AnnotationDbi)
+library(msigdbr)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+library(clusterProfiler)
+library(UCell)
+library(ComplexHeatmap)
+library(circlize)
+library(grid)
+```
+
+
+
+# Read in blood pea
+
+### NOTE - database of proximity extension assays, which detect relative protein levels in the blood. Gives genes (which correpond to proteins) logFC values that correspond with changes relative to healthy controls or other disease conditions.
+
+```{r, include=FALSE}
+hpa_pea <- read_tsv("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/hpa/blood_pea_disease_de.tsv")
+```
+
+
+## Filter for cancer as the disease and for healthy as the control and remove the unnecessary columns
+
+```{r, include=FALSE}
+hpa_pea <- hpa_pea %>%
+  dplyr::filter(Class == "Cancer", Control == "Healthy")
+
+hpa_pea <- hpa_pea[, !names(hpa_pea) %in% c("Seeds", 
+                                            "Mean importance", 
+                                            "SD importance", 
+                                            "Min importance", 
+                                            "Max importance")]
+```
+
+
+## Identify logFC values of tumour secreted ligands (Tnf, Ccl12 which is Ccl2 in humans Cxcl12, Osm) found to regulate the muscle from our mouse analyses. These values are in the blood of tumour-bearing humans relative to healthy controls.
+
+```{r}
+target_proteins <- c("TNF", "CCL2", "CXCL12", "OSM")
+
+hpa_pea_targets <- hpa_pea %>%
+  filter(Gene %in% target_proteins)
+```
+
+
+## Add a column for cachexia risk
+
+```{r, include=FALSE}
+hpa_pea_targets <- hpa_pea_targets %>%
+  mutate(Cachexia_risk = case_when(
+    
+    Disease %in% c(
+      "Pancreatic cancer",
+      "Lung cancer",
+      "Colorectal cancer",
+      "Hepatocellular cancer"
+    ) ~ "High cachectic",
+    
+    Disease %in% c(
+      "Metastatic melanoma",
+      "Ovarian cancer",
+      "Breast cancer",
+      "Cervical cancer",
+      "Endometrial cancer"
+    ) ~ "Moderate cachectic",
+    
+    TRUE ~ "Low cachectic"
+  ))
+
+hpa_pea_targets$Cachexia_risk <- factor(
+  hpa_pea_targets$Cachexia_risk,
+  levels = c("Low cachectic", "Moderate cachectic", "High cachectic")
+)
+```
+
+
+## Plot blood protein levels
+
+### Define cancers from most to least cachectic (according to CHATGPT may need to reorder)
+
+```{r, include=FALSE}
+cachexia_order <- c(
+  "Pituitary neuroendocrine tumor",
+  "Meningioma",
+  "Prostate cancer",
+  "Glioma",
+  "Endometrial cancer",
+  "Cervical cancer",
+  "Breast ductal carcinoma in situ",
+  "Breast cancer",
+  "Chronic lymphocytic leukemia",
+  "Acute myeloid leukemia",
+  "Myeloma",
+  "Diffuse large B-cell lymphoma",
+  "Ovarian cancer",
+  "Metastatic melanoma",
+  "Small intestine neuroendocrine tumor",
+  "Hepatocellular cancer",
+  "Colorectal cancer",
+  "Lung cancer",
+  "Pancreatic cancer"
+)
+```
+
+### Filter genes
+
+```{r, include=FALSE}
+tnf_df <- hpa_pea_targets %>%
+  filter(Gene == "TNF") %>%
+  mutate(p_plot = ifelse(`p-value adjusted` > 0.05, NA, `p-value adjusted`))
+
+ccl2_df <- hpa_pea_targets %>%
+  filter(Gene == "CCL2") %>%
+  mutate(p_plot = ifelse(`p-value adjusted` > 0.05, NA, `p-value adjusted`))
+
+cxcl12_df <- hpa_pea_targets %>%
+  filter(Gene == "CXCL12") %>%
+  mutate(p_plot = ifelse(`p-value adjusted` > 0.05, NA, `p-value adjusted`))
+
+osm_df <- hpa_pea_targets %>%
+  filter(Gene == "OSM") %>%
+  mutate(p_plot = ifelse(`p-value adjusted` > 0.05, NA, `p-value adjusted`))
+```
+
+### Plot TNF
+
+```{r}
+ggplot(
+  tnf_df %>% mutate(Disease = factor(Disease, levels = cachexia_order)),
+  aes(x = Disease, y = logFC, fill = p_plot)
+) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    limits = c(min(tnf_df$p_plot, na.rm = TRUE), 0.05),
+    na.value = "black",
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-0.5, 2)) +
+  labs(
+    title = "Plasma TNF",
+    x = "Cancer type (ranked by cachexia potential)",
+    y = "logFC (relative to healthy controls)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+### Plot CCL2
+
+```{r}
+ggplot(
+  ccl2_df %>% mutate(Disease = factor(Disease, levels = cachexia_order)),
+  aes(x = Disease, y = logFC, fill = p_plot)
+) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",                     # smallest p-values
+    high = "red",                     # values near 0.05
+    limits = c(min(ccl2_df$p_plot, na.rm = TRUE), 0.05),
+    na.value = "black",
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-0.5, 0.5)) +
+  labs(
+    title = "Plasma CCL2",
+    x = "Cancer type (ranked by cachexia potential)",
+    y = "logFC (relative to healthy controls)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+### Plot CXCL12
+
+```{r}
+ggplot(
+  cxcl12_df %>% mutate(Disease = factor(Disease, levels = cachexia_order)),
+  aes(x = Disease, y = logFC, fill = p_plot)
+) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",                     # smallest p-values
+    high = "red",                     # values near 0.05
+    limits = c(min(cxcl12_df$p_plot, na.rm = TRUE), 0.05),
+    na.value = "black",
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-0.75, 0.75)) +
+  labs(
+    title = "Plasma CXCL12",
+    x = "Cancer type (ranked by cachexia potential)",
+    y = "logFC (relative to healthy controls)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+### Plot OSM
+
+```{r}
+ggplot(
+  osm_df %>% mutate(Disease = factor(Disease, levels = cachexia_order)),
+  aes(x = Disease, y = logFC, fill = p_plot)
+) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",                     # smallest p-values
+    high = "red",                     # values near 0.05
+    limits = c(min(osm_df$p_plot, na.rm = TRUE), 0.05),
+    na.value = "black",
+    name = "Adjusted p-value"
+  ) +
+  labs(
+    title = "Plasma OSM",
+    x = "Cancer type (ranked by cachexia potential)",
+    y = "logFC (relative to healthy controls)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+
+## TNF differences between cachexia risk
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+tnf_anova <- aov(logFC ~ Cachexia_risk, data = tnf_df)
+
+summary(tnf_anova)
+```
+
+### Plot
+
+```{r}
+ggplot(tnf_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
+  
+  geom_hline(
+    yintercept = 0,
+    linetype = "solid",
+    size = 0.6
+  ) +
+  
+  stat_summary(
+    fun = mean,
+    geom = "bar",
+    color = "black",
+    width = 0.6
+  ) +
+  
+  stat_summary(
+    fun.data = mean_sdl,
+    fun.args = list(mult = 1),
+    geom = "errorbar",
+    width = 0.2,
+    size = 0.8
+  ) +
+  
+  geom_jitter(
+    aes(color = Disease),
+    width = 0.15,
+    size = 3
+  ) +
+  
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  )) +
+  
+  labs(
+  x = NULL,
+  y = "Plasma TNF logFC (relative to healthy)"
+) +
+  coord_cartesian(ylim = c(-0.5, 2)) +
+  
+  theme_classic()
+```
+
+
+## CCL2 differences between cachexia risk
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+ccl2_anova <- aov(logFC ~ Cachexia_risk, data = ccl2_df)
+
+summary(ccl2_anova)
+```
+
+### Plot
+
+```{r}
+ggplot(ccl2_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
+  
+  geom_hline(
+    yintercept = 0,
+    linetype = "solid",
+    size = 0.6
+  ) +
+  
+  stat_summary(
+    fun = mean,
+    geom = "bar",
+    color = "black",
+    width = 0.6
+  ) +
+  
+  stat_summary(
+    fun.data = mean_sdl,
+    fun.args = list(mult = 1),
+    geom = "errorbar",
+    width = 0.2,
+    size = 0.8
+  ) +
+  
+  geom_jitter(
+    aes(color = Disease),
+    width = 0.15,
+    size = 3
+  ) +
+  
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  )) +
+  
+  labs(
+  x = NULL,
+  y = "Plasma CCL2 logFC (relative to healthy)"
+) +
+  coord_cartesian(ylim = c(-0.5, 1.0)) +
+  
+  theme_classic()
+```
+
+
+## cxcl12 differences between cachexia risk
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+cxcl12_anova <- aov(logFC ~ Cachexia_risk, data = cxcl12_df)
+
+summary(cxcl12_anova)
+```
+
+### Tukey's post-hoc testing
+
+```{r}
+cxcl12_posthoc <- TukeyHSD(cxcl12_anova)
+
+cxcl12_posthoc$Cachexia_risk
+```
+
+### Plot
+
+```{r}
+ggplot(cxcl12_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
+  
+  geom_hline(
+    yintercept = 0,
+    linetype = "solid",
+    size = 0.6
+  ) +
+  
+  stat_summary(
+    fun = mean,
+    geom = "bar",
+    color = "black",
+    width = 0.6
+  ) +
+  
+  stat_summary(
+    fun.data = mean_sdl,
+    fun.args = list(mult = 1),
+    geom = "errorbar",
+    width = 0.2,
+    size = 0.8
+  ) +
+  
+  geom_jitter(
+    aes(color = Disease),
+    width = 0.15,
+    size = 3
+  ) +
+  
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  )) +
+  
+  labs(
+  x = NULL,
+  y = "Plasma CXCL12 logFC (relative to healthy)"
+) +
+  coord_cartesian(ylim = c(-1.0, 1.0)) +
+  
+  theme_classic()
+```
+
+
+## OSM differences between cachexia risk
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+osm_anova <- aov(logFC ~ Cachexia_risk, data = osm_df)
+
+summary(osm_anova)
+```
+
+### Plot
+
+```{r}
+ggplot(osm_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
+  
+  geom_hline(
+    yintercept = 0,
+    linetype = "solid",
+    size = 0.6
+  ) +
+  
+  stat_summary(
+    fun = mean,
+    geom = "bar",
+    color = "black",
+    width = 0.6
+  ) +
+  
+  stat_summary(
+    fun.data = mean_sdl,
+    fun.args = list(mult = 1),
+    geom = "errorbar",
+    width = 0.2,
+    size = 0.8
+  ) +
+  
+  geom_jitter(
+    aes(color = Disease),
+    width = 0.15,
+    size = 3
+  ) +
+  
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  )) +
+  
+  labs(
+  x = NULL,
+  y = "Plasma OSM logFC (relative to healthy)"
+) +
+  coord_cartesian(ylim = c(0, 3)) +
+  
+  theme_classic()
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(ccl2_df, cxcl12_df, hpa_pea, hpa_pea_targets, osm_df, tnf_df, cachexia_order, target_proteins, ccl2_anova, cxcl12_anova, cxcl12_posthoc, osm_anova, tnf_anova)
+```
+
+
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Read in tumour RNA
+
+```{r, include=FALSE}
+tumour_rna <- read_tsv("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/hpa/rna_cancer_sample.tsv")
+```
+
+
+## Add gene names to data.frame
+
+```{r, include=FALSE}
+# Connect to Ensembl
+mart <- useEnsembl(
+  biomart = "genes",
+  dataset = "hsapiens_gene_ensembl"
+)
+
+# Get mapping table
+gene_map <- getBM(
+  attributes = c("ensembl_gene_id", "hgnc_symbol"),
+  filters = "ensembl_gene_id",
+  values = unique(tumour_rna$Gene),
+  mart = mart
+)
+
+# Join back to your dataframe
+tumour_rna <- tumour_rna %>%
+  left_join(gene_map,
+            by = c("Gene" = "ensembl_gene_id")) %>%
+  rename(Gene_symbol = hgnc_symbol)
+
+# Drop NA values
+tumour_rna <- tumour_rna %>%
+  drop_na(Gene_symbol)
+
+# Remove "TCGA" (from HPA) and "validation" (from publically available databases) from Cancer names
+tumour_rna <- tumour_rna %>%
+  mutate(
+    Cancer = sub(" \\(.*\\)", "", Cancer)
+  )
+```
+
+
+## Define  cancers from least to most cachectic (according to CHATGPT may need to reorder)
+
+```{r, include=FALSE}
+cachexia_order <- c(
+  "Thyroid Carcinoma",
+  "Testicular Germ Cell Tumor",
+  "Stomach Adenocarcinoma",
+  "Rectum Adenocarcinoma",
+  "Kidney Renal Papillary Cell Carcinoma",
+  "Kidney Renal Clear Cell Carcinoma",
+  "Kidney Chromophobe",
+  "Head and Neck Squamous Cell Carcinoma",
+  "Bladder Urothelial Carcinoma",
+  "Prostate Adenocarcinoma",
+  "Glioblastoma Multiforme",
+  "Uterine Corpus Endometrial Carcinoma",
+  "Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma",
+  "Breast Invasive Carcinoma",
+  "Ovary Serous Cystadenocarcinoma",
+  "Skin Cuteneous Melanoma",
+  "Liver Hepatocellular Carcinoma",
+  "Colon Adenocarcinoma",
+  "Lung Squamous Cell Carcinoma",
+  "Lung Adenocarcinoma",
+  "Pancreatic Adenocarcinoma"
+)
+```
+
+
+## Add a column for high, moderate, and low cachexia
+
+```{r}
+tumour_rna <- tumour_rna %>%
+  mutate(Cachexia_risk = case_when(
+    Cancer %in% c(
+      "Pancreatic Adenocarcinoma",
+      "Lung Adenocarcinoma",
+      "Lung Squamous Cell Carcinoma",
+      "Colon Adenocarcinoma",
+      "Liver Hepatocellular Carcinoma",
+      "Stomach Adenocarcinoma"
+    ) ~ "High cachectic",
+    
+    Cancer %in% c(
+      "Glioblastoma Multiforme",
+      "Ovary Serous Cystadenocarcinoma",
+      "Breast Invasive Carcinoma",
+      "Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma",
+      "Rectum Adenocarcinoma"
+    ) ~ "Moderate cachectic",
+    
+    TRUE ~ "Low cachectic"  # all remaining cancers
+  ))
+
+tumour_rna$Cachexia_risk <- factor(tumour_rna$Cachexia_risk, 
+                               levels = c("Low cachectic", "Moderate cachectic", "High cachectic"))
+```
+
+
+## Make Cancer column a factor
+
+```{r, include=FALSE}
+tumour_rna <- tumour_rna %>%
+  mutate(Cancer = factor(Cancer, levels = cachexia_order))
+```
+
+
+## Filter genes
+
+```{r, include=FALSE}
+tnf_df <- tumour_rna %>%
+  filter(Gene_symbol == "TNF")
+
+ccl2_df <- tumour_rna %>%
+  filter(Gene_symbol == "CCL2")
+
+cxcl12_df <- tumour_rna %>%
+  filter(Gene_symbol == "CXCL12")
+
+osm_df <- tumour_rna %>%
+  filter(Gene_symbol == "OSM")
+```
+
+
+## Plot 
+
+### Plot TNF
+
+```{r}
+ggplot(tnf_df, aes(x = Cancer, y = pTPM)) +
+  geom_jitter(width = 0.2, size = 2, color = "black", alpha = 0.7) +  # points
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", size = 0.7, fatten = 2) +  # mean line
+  labs(
+    title = "TNF pTPM across Cancer Types",
+    x = "Cancer Type (ranked by cachexia potential)",
+    y = "pTPM"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+#### Mean TNF pTPM values by Cancer type
+
+```{r}
+tnf_df %>%
+  group_by(Cancer) %>%
+  summarize(mean_pTPM = mean(pTPM, na.rm = TRUE))
+```
+
+### Plot CCL2
+
+```{r}
+ggplot(ccl2_df, aes(x = Cancer, y = pTPM)) +
+  geom_jitter(width = 0.2, size = 2, color = "black", alpha = 0.7) +  # points
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", size = 0.7, fatten = 2) +  # mean line
+  labs(
+    title = "CCL2 pTPM across Cancer Types",
+    x = "Cancer Type (ranked by cachexia potential)",
+    y = "pTPM"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+#### Mean CCL2 pTPM values by Cancer type
+
+```{r}
+ccl2_df %>%
+  group_by(Cancer) %>%
+  summarize(mean_pTPM = mean(pTPM, na.rm = TRUE))
+```
+
+### Plot CXCL12
+
+```{r}
+ggplot(cxcl12_df, aes(x = Cancer, y = pTPM)) +
+  geom_jitter(width = 0.2, size = 2, color = "black", alpha = 0.7) +  # points
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", size = 0.7, fatten = 2) +  # mean line
+  labs(
+    title = "CXCL12 pTPM across Cancer Types",
+    x = "Cancer Type (ranked by cachexia potential)",
+    y = "pTPM"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+#### Mean CXCL12 pTPM values by Cancer type
+
+```{r}
+cxcl12_df %>%
+  group_by(Cancer) %>%
+  summarize(mean_pTPM = mean(pTPM, na.rm = TRUE))
+```
+
+### Plot OSM
+
+```{r}
+ggplot(osm_df, aes(x = Cancer, y = pTPM)) +
+  geom_jitter(width = 0.2, size = 2, color = "black", alpha = 0.7) +  # points
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", size = 0.7, fatten = 2) +  # mean line
+  labs(
+    title = "OSM pTPM across Cancer Types",
+    x = "Cancer Type (ranked by cachexia potential)",
+    y = "pTPM"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+#### Mean OSM pTPM values by Cancer type
+
+```{r}
+osm_df %>%
+  group_by(Cancer) %>%
+  summarize(mean_pTPM = mean(pTPM, na.rm = TRUE))
+```
+
+
+## TNF differences between cachexia risk
+
+### Mean TNF pTPM values by Cachexia_risk
+
+```{r}
+tnf_df %>%
+  group_by(Cachexia_risk) %>%
+  summarise(
+    mean_pTPM = mean(pTPM, na.rm = TRUE),
+    n = n()
+  )
+```
+
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+tnf_anova <- aov(pTPM ~ Cachexia_risk, data = tnf_df)
+
+summary(tnf_anova)
+```
+
+### Tukey's post-hoc testing
+
+```{r}
+tnf_posthoc <- TukeyHSD(tnf_anova)
+
+tnf_posthoc$Cachexia_risk
+```
+
+### Plot (log transformed axes to see differences)
+
+```{r}
+ggplot(tnf_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
+  geom_boxplot(
+    outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8
+  ) +
+  stat_boxplot(
+    geom = "errorbar", width = 0.2, lwd = 0.8
+  ) +
+  scale_y_log10() +  # log-transform the y-axis
+  labs(
+    title = "TNF",
+    y = "pTPM (log10 scale)",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  ))
+```
+
+
+## CCL2 differences between cachexia risk
+
+### Mean CCL2 pTPM values by Cachexia_risk
+
+```{r}
+ccl2_df %>%
+  group_by(Cachexia_risk) %>%
+  summarise(
+    mean_pTPM = mean(pTPM, na.rm = TRUE),
+    n = n()
+  )
+```
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+ccl2_anova <- aov(pTPM ~ Cachexia_risk, data = ccl2_df)
+
+summary(ccl2_anova)
+```
+
+### Tukey's post-hoc testing
+
+```{r}
+ccl2_posthoc <- TukeyHSD(ccl2_anova)
+
+ccl2_posthoc$Cachexia_risk
+```
+
+### Plot (log transformed axes to see differences)
+
+```{r}
+ggplot(ccl2_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
+  geom_boxplot(
+    outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8
+  ) +
+  stat_boxplot(
+    geom = "errorbar", width = 0.2, lwd = 0.8
+  ) +
+  scale_y_log10() +  # log-transform the y-axis
+  labs(
+    title = "CCL2",
+    y = "pTPM (log10 scale)",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  ))
+```
+
+
+## CXCL12 differences between cachexia risk
+
+### Mean CXCL12 pTPM values by Cachexia_risk
+
+```{r}
+cxcl12_df %>%
+  group_by(Cachexia_risk) %>%
+  summarise(
+    mean_pTPM = mean(pTPM, na.rm = TRUE),
+    n = n()
+  )
+```
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+cxcl12_anova <- aov(pTPM ~ Cachexia_risk, data = cxcl12_df)
+
+summary(cxcl12_anova)
+```
+
+### Tukey's post-hoc testing
+
+```{r}
+cxcl12_posthoc <- TukeyHSD(cxcl12_anova)
+
+cxcl12_posthoc$Cachexia_risk
+```
+
+### Plot (log transformed axes to see differences)
+
+```{r}
+ggplot(cxcl12_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
+  geom_boxplot(
+    outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8
+  ) +
+  stat_boxplot(
+    geom = "errorbar", width = 0.2, lwd = 0.8
+  ) +
+  scale_y_log10() +  # log-transform the y-axis
+  labs(
+    title = "CXCL12",
+    y = "pTPM (log10 scale)",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  ))
+```
+
+
+## OSM differences between cachexia risk
+
+### Mean OSM pTPM values by Cachexia_risk
+
+```{r}
+osm_df %>%
+  group_by(Cachexia_risk) %>%
+  summarise(
+    mean_pTPM = mean(pTPM, na.rm = TRUE),
+    n = n()
+  )
+```
+
+### 1-way ANOVA to compare pTPM values between cachexia risks
+
+```{r}
+osm_anova <- aov(pTPM ~ Cachexia_risk, data = osm_df)
+
+summary(osm_anova)
+```
+
+### Tukey's post-hoc testing
+
+```{r}
+osm_posthoc <- TukeyHSD(osm_anova)
+
+osm_posthoc$Cachexia_risk
+```
+
+### Plot (log transformed axes to see differences)
+
+```{r}
+ggplot(osm_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
+  geom_boxplot(
+    outlier.shape = NA, alpha = 0.7, width = 0.6, lwd = 0.8
+  ) +
+  stat_boxplot(
+    geom = "errorbar", width = 0.2, lwd = 0.8
+  ) +
+  scale_y_log10() +  # log-transform the y-axis
+  labs(
+    title = "OSM",
+    y = "pTPM (log10 scale)",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "italic", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_fill_manual(values = c(
+    "High cachectic" = "#666666",
+    "Moderate cachectic" = "lightgrey",
+    "Low cachectic" = "white"
+  ))
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(ccl2_anova, ccl2_df, ccl2_posthoc, cxcl12_df, cxcl12_anova, cxcl12_posthoc, gene_map, mart, osm_df, osm_anova, osm_posthoc, tnf_df, tnf_anova, tnf_posthoc, cachexia_order, tumour_rna)
+```
+
+
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Read in tumour cptac
+
+### NOTE - CPTAC is "Clinical Proteomic tumour Analysis Consortium". Measured as a logFC relative to healthy tissue.
+
+```{r, include=FALSE}
+tumour_cptac <- read_tsv("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/hpa/cancer_cptac.tsv")
+```
+
+
+## Identify logFC values of tumour secreted ligands (Tnf, Ccl12 which is Ccl2 in humans Cxcl12, Osm) found to regulate the muscle from our mouse analyses.
+
+```{r}
+target_proteins <- c("TNF", "CCL2", "CXCL12", "OSM")
+
+tumour_cptac_targets <- tumour_cptac %>%
+  filter(`Gene name` %in% target_proteins) %>%
+  filter(`p-value adjusted` < 0.05) %>%
+  mutate(p_plot = ifelse(`p-value adjusted` > 0.05, NA, `p-value adjusted`))
+```
+
+### NOTE - No OSM protein found in the tumour (apparently secreted by immune cells, it does have OSMR though). When filtering for p<0.05, only CXCL12 remains. 
+
+
+## Order cancers from least to most cachectic
+
+```{r, include=FALSE}
+cachexia_order <- c(
+  "Endometrioid AC",
+  "Uterine CEC",
+  "Head and Neck SQCC",
+  "Renal cell carcinoma",
+  "Colon AC",
+  "Liver HC",
+  "Lung AC",
+  "Lung SQCC",
+  "Pancreatic DAC"
+)
+```
+
+
+## Plot
+
+```{r}
+ggplot(
+  tumour_cptac_targets %>% mutate(Cancer = factor(Cancer, levels = cachexia_order)),
+  aes(x = Cancer, y = logFC, fill = p_plot)
+) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    limits = c(min(tumour_cptac_targets$p_plot, na.rm = TRUE), 0.05),
+    na.value = "black",
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 0)) +
+  labs(
+    title = "Tumour CXCL12",
+    x = "Cancer type (ranked by cachexia potential)",
+    y = "logFC (relative to healthy tissue)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(tumour_cptac, tumour_cptac_targets, cachexia_order, target_proteins)
+```
+
+
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Load human PDAC tumour scRNAseq data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/PDAC_tumours_scRNAseq.RData")
+
+pdac_tumours <- pdac_tumours_combined
+
+rm(pdac_tumours_combined)
+```
+
+
+## See what cell types in the tumour express TNF, CCL2, CXCL12, OSM
+
+```{r}
+Idents(pdac_tumours) <- "seurat_clusters"
+
+DotPlot(pdac_tumours, features = c("TNF", "CCL2", "CXCL12", "OSM")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Remove unused object
+
+```{r, include=FALSE}
+rm(pdac_tumours)
+```
+
+
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Load human PDAC muscle scRNAseq data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/dataset_processing/muscle/Pryce_PDAC_processed.RData")
+
+pdac_muscle <- PDAC_combined
+
+rm(DEGs_PDAC_clusters, DEGs_PDAC_MuSCs, DEGs_PDAC_Myonuclei, DEGs_PDAC_Endothelial_cells, DEGs_PDAC_vSMCs_pericytes, DEGs_PDAC_FAPs, DEGs_PDAC_Platelets, DEGs_PDAC_Mast_cells, DEGs_PDAC_Monocytes_macrophages, DEGs_PDAC_Neutrophils, DEGs_PDAC_T_NK_cells, PDAC_MuSCs, PDAC_Myonuclei, PDAC_Endothelial_cells, PDAC_vSMCs_pericytes, PDAC_FAPs, PDAC_Platelets, PDAC_Mast_cells, PDAC_Monocytes_macrophages, PDAC_Neutrophils, PDAC_T_NK_cells, PDAC_CTL, PDAC_WS, PDAC_cac, PDAC_combined, cluster_ids, cluster_labels, cluster_to_cell_type, PDAC_cell_counts_cluster)
+```
+
+
+## Get a list of predicted target genes from tumour-secreted ligands (identified by NicheNet)
+
+```{r, include=FALSE}
+tnf_ccl12_cxcl12_targets <- c("Cd14", "Ier3", "Socs3", "Nfkbia", "Fgl2", "Hmox1", "Mt1", "Nfkbiz", "Ninj1", "Klf6", "Ehd1", "Tgfbi", "Junb", "Cxcl2", "Pnrc1", "Bcl3", "Cebpd", "Birc3", "Irf1", "Trib1", "Rnf19b", "Ppp1r15a", "Cdkn1a", "Gbp2b", "Tlr4", "Timp2", "Itgam", "Pim1", "Gbp2", "Tnfaip3", "Sdc4", "Gadd45b", "Plaur", "Cflar", "Nampt", "Ifngr1", "Il1b", "Mvp", "Zfp36", "C3", "Icam1", "Sod2", "Txnip", "Ppard", "Sqstm1", "Rgl1", "Cd44", "B4galt5", "Tlr2", "Tap1", "Hif1a", "Egr1", "Cd47", "Ncf1", "Ctss", "Ankrd33b", "Serpinb8", "Rhob", "Anxa1", "Stat1", "Ifnar2", "Emp1", "Fos", "Fas", "Cxcl1", "Bcl2l1", "Maff", "Tnfaip2", "Stx11", "Ddit4", "Nfkbib", "Cebpa", "Rela", "Noct", "Tank", "Optn", "Nedd9", "Dram1", "Nfkb2", "Tnf", "Rsad2", "Egr2", "Irak2", "Nfkbie", "Hivep2", "Pmaip1", "Znfx1", "Irf7", "Ikbke", "Tifa", "Il15", "Sgk1", "Jun", "Traf3", "Ccl2", "Parp12", "Ddx58", "Pla2g4a", "Ebi3", "Ddit3", "Ccl5", "Ptgs2", "Pfkfb4", "Ahr", "Ampd3", "G0s2", "Gadd45a", "Cd83", "Il1rn")
+
+osm_targets <- c("Cebpd", "Junb", "Cdkn1a", "Ier3", "Egr1", "Osmr", "Serpina3n", "Ifitm3", "B2m", "Socs3", "Pim1", "Ifitm2", "Stat3", "Il6ra", "Fosl2", "Txnip", "Il4ra", "Trib1", "Casp4", "Adm", "C1s1", "Gadd45b", "Xbp1", "Tgm2", "Vwa5a", "C1ra", "Carhsp1", "Nampt", "Tnfrsf1a", "Dpp4")
+```
+
+
+## Map mouse genes to human orthologs
+
+### NOTE - I downloaded a file from BioMart that has matching human and mouse genes
+
+```{r, include=FALSE}
+orthologs <- read.table("C:/Users/nwb_l/Documents/r_projects/human_mouse_orthologs.txt", header = TRUE, stringsAsFactors = FALSE, sep = "", fill = TRUE)
+
+# Filter for high-confidence orthologs
+orthologs_hc <- orthologs %>%
+  filter(orthology_confidence == 1)
+
+# Map mouse genes to human for Tnf/Ccl12/Cxcl12 targets
+tnf_ccl2_cxcl12_targets_human <- orthologs_hc %>%
+  filter(mouse_gene_name %in% tnf_ccl12_cxcl12_targets) %>%
+  pull(human_gene_name) %>% 
+  unique()   # remove duplicates
+
+# Map mouse genes to human for OSM targets
+osm_targets_human <- orthologs_hc %>%
+  filter(mouse_gene_name %in% osm_targets) %>%
+  pull(human_gene_name) %>% 
+  unique()
+```
+
+
+## Score conditions for tnf_ccl2_cxcl12_targets in immune cells
+
+### Filter for immune cells with TNF, CCL12, CXCL12 receptors in mice
+
+```{r, include=FALSE}
+Idents(pdac_muscle) <- "seurat_clusters"
+
+pdac_muscle_immune <- subset(pdac_muscle, idents = c("Monocytes/macrophages", "Neutrophils"))
+```
+
+
+```{r, include=FALSE}
+tnf_ccl2_cxcl12_targets_score <- AddModuleScore_UCell(pdac_muscle_immune, features = list(tnf_ccl2_cxcl12_targets_human), name = "tnf_ccl2_cxcl12_targets_score")
+
+means_tnf_ccl2_cxcl12_targets_score <- tnf_ccl2_cxcl12_targets_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_tnf_ccl2_cxcl12_targets_score = mean(signature_1tnf_ccl2_cxcl12_targets_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_tnf_ccl2_cxcl12_targets_score)
+```
+
+```{r}
+VlnPlot(tnf_ccl2_cxcl12_targets_score, features = "signature_1tnf_ccl2_cxcl12_targets_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "TNF, CCL2, CXCL12 Targets Score", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+
+## Score conditions for osm_targets in non-immune cells
+
+### Filter for non-immune cells with OSM receptor in mice
+
+```{r, include=FALSE}
+Idents(pdac_muscle) <- "seurat_clusters"
+
+pdac_muscle_non_immune <- subset(pdac_muscle, idents = c("Endothelial cells", "vSMCs/pericytes", "FAPs"))
+```
+
+
+```{r, include=FALSE}
+osm_targets_score <- AddModuleScore_UCell(pdac_muscle_non_immune, features = list(osm_targets_human), name = "osm_targets_score")
+
+means_osm_targets_score <- osm_targets_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_osm_targets_score = mean(signature_1osm_targets_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_osm_targets_score)
+```
+
+```{r}
+VlnPlot(osm_targets_score, features = "signature_1osm_targets_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "OSM Targets Score", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+
+## Heatmap of DEGs for each gene in tnf_ccl2_cxcl12_targets_human
+
+### DEGs by condition
+
+```{r, include=FALSE}
+Idents(pdac_muscle_immune) <- "orig.ident"
+
+DEGs_immune_ws_v_ctl <- FindMarkers(pdac_muscle_immune, ident.1 = "PDAC_WS", ident.2 = "PDAC_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+DEGs_immune_cac_v_ctl <- FindMarkers(pdac_muscle_immune, ident.1 = "PDAC_cachectic", ident.2 = "PDAC_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+DEGs_immune_cac_v_ws <- FindMarkers(pdac_muscle_immune, ident.1 = "PDAC_cachectic", ident.2 = "PDAC_WS", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+
+DEGs_immune_ws_v_ctl <- DEGs_immune_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+DEGs_immune_cac_v_ctl <- DEGs_immune_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+DEGs_immune_cac_v_ws <- DEGs_immune_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL (no filter by p_val because too few cells, filtered by avg_log2FC > 0.2)
+
+```{r}
+# Filter each DEG table for significant upregulation
+sig_cac_vs_ctl <- DEGs_immune_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2) %>%
+  rownames()
+
+sig_cac_vs_ws <- DEGs_immune_cac_v_ws %>%
+  filter(avg_log2FC > 0.2) %>%
+  rownames()
+
+sig_ws_vs_ctl <- DEGs_immune_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2) %>%
+  rownames()
+
+# Genes that are significant in both cac comparisons but NOT in WS vs CTL
+cachectic_immune_genes <- intersect(sig_cac_vs_ctl, sig_cac_vs_ws) %>%
+  setdiff(sig_ws_vs_ctl)
+
+# Show result
+cachectic_immune_genes
+```
+
+### Specify which of these "up" genes are also in the tnf_ccl2_cxcl2_targets_human list
+
+```{r}
+tnf_ccl2_cxcl12_targets_up <- intersect(cachectic_immune_genes, tnf_ccl2_cxcl12_targets_human)
+
+tnf_ccl2_cxcl12_targets_up
+```
+
+### Plot heatmap, highlight up cachectic genes
+
+```{r}
+## Filter target genes to only those present in your DEG tables
+tnf_ccl2_cxcl12_targets_present <- tnf_ccl2_cxcl12_targets_human[
+  tnf_ccl2_cxcl12_targets_human %in% rownames(DEGs_immune_ws_v_ctl) &
+  tnf_ccl2_cxcl12_targets_human %in% rownames(DEGs_immune_cac_v_ctl) &
+  tnf_ccl2_cxcl12_targets_human %in% rownames(DEGs_immune_cac_v_ws)
+]
+
+## Build heatmap matrix: rows = comparisons, columns = genes
+tnf_ccl2_cxcl12_heatmap_matrix <- t(data.frame(
+  "WS vs CTL"  = DEGs_immune_ws_v_ctl[tnf_ccl2_cxcl12_targets_present, "avg_log2FC"],
+  "CAC vs CTL" = DEGs_immune_cac_v_ctl[tnf_ccl2_cxcl12_targets_present, "avg_log2FC"],
+  "CAC vs WS"  = DEGs_immune_cac_v_ws[tnf_ccl2_cxcl12_targets_present, "avg_log2FC"]
+))
+colnames(tnf_ccl2_cxcl12_heatmap_matrix) <- tnf_ccl2_cxcl12_targets_present
+rownames(tnf_ccl2_cxcl12_heatmap_matrix) <- c("WS vs CTL", "CAC vs CTL", "CAC vs WS")
+
+## Colors for heatmap
+tnf_ccl2_cxcl12_heatmap_colors <- colorRamp2(
+  c(-10, 0, 10),
+  c("blue", "white", "red")
+)
+
+## Column label colors: red if gene is in osm_targets_up, black otherwise
+gene_label_colors <- ifelse(colnames(tnf_ccl2_cxcl12_heatmap_matrix) %in% tnf_ccl2_cxcl12_targets_up, "red", "black")
+
+# Heatmap with italicized human gene names
+Heatmap(
+  tnf_ccl2_cxcl12_heatmap_matrix,
+  name = "avg_log2FC",
+  col = tnf_ccl2_cxcl12_heatmap_colors,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  
+  # Square cells
+  width = unit(ncol(tnf_ccl2_cxcl12_heatmap_matrix)*15, "pt"),
+  height = unit(nrow(tnf_ccl2_cxcl12_heatmap_matrix)*15, "pt"),
+  
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    grid.rect(x = x, y = y, width = width, height = height,
+              gp = gpar(fill = fill, col = "black", lwd = 0.5))
+  },
+  
+  # Column names: colored & italicized
+  column_names_gp = gpar(col = gene_label_colors, fontsize = 10, fontface = "italic"),
+  
+  # Row names
+  row_names_gp = gpar(fontsize = 10),
+  
+  border = TRUE,
+  column_title = "TNF/CCL2/CXCL12 Target Genes (avg_log2FC)"
+)
+```
+
+
+## Heatmap of DEGs for each gene in osm_targets_human
+
+### DEGs by condition
+
+```{r, include=FALSE}
+# Set identities to clusters
+Idents(pdac_muscle_non_immune) <- "orig.ident"
+
+# Find DEGs for non-immune cells
+DEGs_non_immune_ws_v_ctl <- FindMarkers(
+  pdac_muscle_non_immune,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_non_immune_cac_v_ctl <- FindMarkers(
+  pdac_muscle_non_immune,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_non_immune_cac_v_ws <- FindMarkers(
+  pdac_muscle_non_immune,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+# Add -log10(p_val_adj)
+DEGs_non_immune_ws_v_ctl <- DEGs_non_immune_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_non_immune_cac_v_ctl <- DEGs_non_immune_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_non_immune_cac_v_ws <- DEGs_non_immune_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL (no filter by p_val because too few cells, filtered by avg_log2FC > 0.2)
+
+```{r}
+# Filter each DEG table for significant upregulation
+sig_ni_cac_vs_ctl <- DEGs_non_immune_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2) %>%
+  rownames()
+
+sig_ni_cac_vs_ws <- DEGs_non_immune_cac_v_ws %>%
+  filter(avg_log2FC > 0.2) %>%
+  rownames()
+
+sig_ni_ws_vs_ctl <- DEGs_non_immune_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2) %>%
+  rownames()
+
+# Genes that are significant in both cac comparisons but NOT in WS vs CTL
+cachectic_non_immune_genes <- intersect(sig_ni_cac_vs_ctl, sig_ni_cac_vs_ws) %>%
+  setdiff(sig_ni_ws_vs_ctl)
+
+# Show result
+cachectic_non_immune_genes
+```
+
+### Specify which of these "up" genes are also in the osm_targets_human list
+
+```{r}
+osm_targets_up <- intersect(cachectic_non_immune_genes, osm_targets_human)
+
+osm_targets_up
+```
+
+### Plot heatmap, highlight up cachectic genes
+
+```{r}
+## Filter target genes to only those present in your DEG tables
+osm_targets_present <- osm_targets_human[
+  osm_targets_human %in% rownames(DEGs_non_immune_ws_v_ctl) &
+  osm_targets_human %in% rownames(DEGs_non_immune_cac_v_ctl) &
+  osm_targets_human %in% rownames(DEGs_non_immune_cac_v_ws)
+]
+
+## Build heatmap matrix: rows = comparisons, columns = genes
+heatmap_matrix <- t(data.frame(
+  "WS vs CTL"  = DEGs_non_immune_ws_v_ctl[osm_targets_present, "avg_log2FC"],
+  "CAC vs CTL" = DEGs_non_immune_cac_v_ctl[osm_targets_present, "avg_log2FC"],
+  "CAC vs WS"  = DEGs_non_immune_cac_v_ws[osm_targets_present, "avg_log2FC"]
+))
+colnames(heatmap_matrix) <- osm_targets_present
+rownames(heatmap_matrix) <- c("WS vs CTL", "CAC vs CTL", "CAC vs WS")
+
+## Colors for heatmap
+heatmap_colors <- colorRamp2(
+  c(-3, 0, 3),
+  c("blue", "white", "red")
+)
+
+## Column label colors: red if gene is in osm_targets_up, black otherwise
+gene_label_colors <- ifelse(colnames(heatmap_matrix) %in% osm_targets_up, "red", "black")
+
+## Plot horizontal heatmap
+Heatmap(
+  heatmap_matrix,
+  name = "avg_log2FC",
+  col = heatmap_colors,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  
+  # Square cells with borders
+  width = unit(ncol(heatmap_matrix)*15, "pt"),
+  height = unit(nrow(heatmap_matrix)*15, "pt"),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    grid.rect(x = x, y = y, width = width, height = height,
+              gp = gpar(fill = fill, col = "black", lwd = 0.5))
+  },
+  
+  # Column names: gene labels, colored red if in osm_targets_up, italicized
+  column_names_gp = gpar(col = gene_label_colors, fontsize = 10, fontface = "italic"),
+  
+  # Row names: comparisons
+  row_names_gp = gpar(fontsize = 10, fontface = "plain"),
+  
+  border = TRUE,
+  column_title = "OSM Target Genes in Non-Immune Cells (avg_log2FC)",
+  column_title_side = "top"
+)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(DEGs_immune_cac_v_ctl, DEGs_immune_cac_v_ws, DEGs_immune_ws_v_ctl, DEGs_non_immune_cac_v_ctl, DEGs_non_immune_cac_v_ws, DEGs_non_immune_ws_v_ctl, heatmap_matrix, means_osm_targets_score, means_tnf_ccl2_cxcl12_targets_score, orthologs, orthologs_hc, osm_targets_score, pdac_muscle, pdac_muscle_immune, pdac_muscle_non_immune, tnf_ccl2_cxcl12_heatmap_matrix, tnf_ccl2_cxcl12_targets_score, cachectic_immune_genes, cachectic_non_immune_genes, gene_label_colors, osm_targets, osm_targets_human, osm_targets_present, osm_targets_up, sig_cac_vs_ctl, sig_cac_vs_ws, sig_ni_cac_vs_ctl, sig_ni_cac_vs_ws, sig_ni_ws_vs_ctl, sig_ws_vs_ctl, tnf_ccl12_cxcl12_targets, tnf_ccl2_cxcl12_targets_human, tnf_ccl2_cxcl12_targets_present, tnf_ccl2_cxcl12_targets_up, heatmap_colors, tnf_ccl2_cxcl12_heatmap_colors)
+```

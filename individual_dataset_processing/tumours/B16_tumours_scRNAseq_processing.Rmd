@@ -1,0 +1,253 @@
+---
+title: "B16_tumours_scRNAseq_processing"
+author: "Alex Brown"
+date: "2025-11-12"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(cowplot)
+library(patchwork)
+library(grid)
+library(gridExtra)
+library(scDblFinder)
+```
+
+
+
+# Read in the data
+
+```{r, include=FALSE}
+B16_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE228014_B16F10_processed.txt")
+```
+
+
+
+# Format data
+
+```{r}
+# Make gene names rownames
+B16_tumour_data$X <- as.character(B16_tumour_data$X)
+
+B16_tumour_data <- aggregate(. ~ X, data = B16_tumour_data, FUN = sum, na.rm = TRUE)
+rownames(B16_tumour_data) <- B16_tumour_data$X
+B16_tumour_data <- B16_tumour_data[, -1]
+
+B16_tumour_matrix <- data.matrix(B16_tumour_data)
+B16_tumour_matrix <- as(B16_tumour_matrix, "dgCMatrix")
+
+
+# Create seurat object
+### NOTE - treating the normalized counts as counts just to satisfy the seurat object requirements
+B16_tumour_so <- CreateSeuratObject(
+  counts = B16_tumour_matrix,
+  project = "B16F10_tumours"
+)
+
+# Put normalized matrix into the data slot
+B16_tumour_so <- SetAssayData(
+    object = B16_tumour_so,
+    layer  = "data",
+    new.data = B16_tumour_matrix,
+    assay  = "RNA"
+)
+```
+
+### NOTE - this data is already processed. Move directly to PCA and clustering. 
+
+
+```{r, include=FALSE}
+all_genes_B16_tumour <- rownames(B16_tumour_so)
+
+B16_tumour_so_norm <- B16_tumour_so %>%
+  FindVariableFeatures(selection.method = "vst", nfeatures = 4000) %>%
+  ScaleData(features = all_genes_B16_tumour) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(B16_tumour_so_norm, ndims = 50) ### to check dims
+```
+
+```{r, include=FALSE}
+B16_tumour_so_norm <- B16_tumour_so_norm %>%
+  FindNeighbors(dims = 1:41) %>%
+  FindClusters(resolution = 1.2) %>%
+  RunUMAP(dims = 1:41)
+```
+
+
+
+### NOTE - skipping doublet detection because it requires raw counts. 
+
+
+
+# Annotate cells
+
+```{r, include=FALSE}
+Idents(B16_tumour_so_norm) <- "seurat_clusters"
+
+cluster_ids <- levels(B16_tumour_so_norm$seurat_clusters)
+```
+
+```{r, include=FALSE}
+cluster_labels <- c("Tumour cells", 
+                 "Tumour cells", 
+                 "Tumour cells",
+                 "Tumour cells",
+                 "Tumour cells",
+                 "5")
+```
+
+```{r, include=FALSE}
+cluster_to_cell_type <- setNames(cluster_labels, cluster_ids)
+
+B16_tumour_so_norm$seurat_clusters <- cluster_labels[B16_tumour_so_norm$seurat_clusters]
+```
+
+
+## Order clusters
+
+```{r, include=FALSE}
+B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters, levels = c(
+            "Tumour cells", 
+            "5"))
+```
+
+### DotPlot to show differentially expressed genes between clusters
+
+```{r}
+DefaultAssay(B16_tumour_so_norm) <- "RNA"
+Idents(B16_tumour_so_norm) <- "seurat_clusters"
+
+DotPlot(object = B16_tumour_so_norm, features = c(
+  "Mitf", "Sox10", "Pax3", "Ednrb", # Melanocytes
+  "Epcam", "Krt8", "Krt18", "Krt19", "Muc1", "Top2a", "Pcna", # Tumour cells
+  "Cdh5", "Pecam1", "Igfbp3", "Igfbp7", # Endothelial cells
+  "Col1a1", "Col1a2", "Serping1", "Dcn", # Cancer-associated fibroblasts
+  "Cd209a", "Itgam", "Ccr2", "Ly6c2", # Monocytes
+  "Cd68", "Cd74", "Cd83", "Ccl6", "Ccl9", "C1qa", # Macrophages
+  "S100a8", "S100a9", "Ifitm1", # Neutrophils
+  "Cd79a", # B cells
+  "Il7r", "Cd4", # T cells
+  "Nkg7", "Klra7", # NK cells
+  "Hba-a2"
+  )) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Split cluster 5
+
+```{r, include=FALSE}
+Idents(B16_tumour_so_norm) <- "seurat_clusters"
+
+cluster_5 <- subset(B16_tumour_so_norm, idents = "5")
+
+cluster_5 <- NormalizeData(cluster_5)
+cluster_5 <- FindVariableFeatures(cluster_5, nfeatures = 4000)
+cluster_5 <- ScaleData(cluster_5)
+cluster_5 <- RunPCA(cluster_5, npcs = 50)
+```
+
+```{r}
+ElbowPlot(cluster_5, ndims = 50)
+```
+
+```{r, include=FALSE}
+cluster_5 <- FindNeighbors(cluster_5, reduction = "pca", dims = 1:50) %>% 
+  FindClusters(resolution = 1.2)
+
+cluster_5 <- RunUMAP(cluster_5, reduction = "pca", dims = 1:50)
+```
+
+```{r, include=FALSE}
+DefaultAssay(cluster_5) <- "RNA"
+
+Idents(cluster_5) <- cluster_5$seurat_clusters
+cluster_5 <- JoinLayers(cluster_5, what = "all")
+```
+
+```{r, include=FALSE}
+Idents(cluster_5) <- "seurat_clusters"
+
+cluster_5_cluster_labels <- c("Monocytes/macrophages", "Endothelial cells/CAFs")
+
+cluster_5_clusters <- cluster_5@meta.data$seurat_clusters
+
+cluster_5$seurat_clusters <- cluster_5_cluster_labels[cluster_5$seurat_clusters]
+```
+
+### Write new cluster labels back into B16_tumour_so_norm
+
+```{r, include=FALSE}
+B16_tumour_so_norm$seurat_clusters <- as.character(B16_tumour_so_norm$seurat_clusters)
+
+B16_tumour_so_norm$seurat_clusters[Cells(cluster_5)] <- 
+  as.character(cluster_5$seurat_clusters)
+
+B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters)
+```
+
+
+## Re-order clusters
+
+```{r, include=FALSE}
+B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters, levels = c(
+            "Tumour cells", 
+            "Endothelial cells/CAFs",
+            "Monocytes/macrophages"))
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(B16_tumour_data, B16_tumour_matrix, B16_tumour_so, cluster_5, cluster_5_cluster_labels, cluster_5_clusters, cluster_ids, cluster_labels, cluster_to_cell_type)
+```
+
+
+## Visualize
+
+```{r}
+B16_tumour_so_norm$seurat_clusters <- as.character(B16_tumour_so_norm$seurat_clusters)
+
+B16_tumour_so_norm$seurat_clusters[
+  B16_tumour_so_norm$seurat_clusters == "Endothelial cells/CAFs"
+] <- "ECs/CAFs"
+
+B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters)
+
+B16_tumour_so_norm$seurat_clusters <- factor(
+  B16_tumour_so_norm$seurat_clusters,
+  levels = c(
+    "Tumour cells",
+    "ECs/CAFs",
+    "Monocytes/macrophages"
+  )
+)
+
+
+
+B16_cluster_colours <- c(
+    "Tumour cells"         = "#C0C0C0",
+    "ECs/CAFs"             = "#BFFF00",
+    "Monocytes/macrophages" = "#4BB5FF"
+)
+
+DimPlot(B16_tumour_so_norm, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1, cols = B16_cluster_colours) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
