@@ -259,7 +259,7 @@ ggplot(
 
 ## TNF differences between cachexia risk
 
-### 1-way ANOVA to compare pTPM values between cachexia risks
+### 1-way ANOVA to compare plasma values between cachexia risks
 
 ```{r}
 tnf_anova <- aov(logFC ~ Cachexia_risk, data = tnf_df)
@@ -317,7 +317,7 @@ ggplot(tnf_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
 
 ## CCL2 differences between cachexia risk
 
-### 1-way ANOVA to compare pTPM values between cachexia risks
+### 1-way ANOVA to compare plasma values between cachexia risks
 
 ```{r}
 ccl2_anova <- aov(logFC ~ Cachexia_risk, data = ccl2_df)
@@ -375,7 +375,7 @@ ggplot(ccl2_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
 
 ## cxcl12 differences between cachexia risk
 
-### 1-way ANOVA to compare pTPM values between cachexia risks
+### 1-way ANOVA to compare plasma values between cachexia risks
 
 ```{r}
 cxcl12_anova <- aov(logFC ~ Cachexia_risk, data = cxcl12_df)
@@ -441,7 +441,7 @@ ggplot(cxcl12_df, aes(x = Cachexia_risk, y = logFC, fill = Cachexia_risk)) +
 
 ## OSM differences between cachexia risk
 
-### 1-way ANOVA to compare pTPM values between cachexia risks
+### 1-way ANOVA to compare plasma values between cachexia risks
 
 ```{r}
 osm_anova <- aov(logFC ~ Cachexia_risk, data = osm_df)
