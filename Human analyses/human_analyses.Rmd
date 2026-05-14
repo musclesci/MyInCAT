@@ -553,7 +553,7 @@ tumour_rna <- tumour_rna %>%
 ```
 
 
-## Define  cancers from least to most cachectic (according to CHATGPT may need to reorder)
+## Define  cancers from least to most cachectic (according to Anker et al. 2019, Rajan et al. 2025, Callaway et al. 2023, Kelly et al. 2026)
 
 ```{r, include=FALSE}
 cachexia_order <- c(
