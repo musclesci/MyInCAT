@@ -13,4 +13,4 @@ Codes related to the MyInCAT website design:
 https://github.com/IsaacLafond/MyInCAT
 
 Integrated seurat and cellchat objects on Zenodo:
-10.5281/zenodo.19208745
+https://doi.org/10.5281/zenodo.19208746
