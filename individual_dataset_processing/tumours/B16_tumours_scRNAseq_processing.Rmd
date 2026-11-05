@@ -28,7 +28,7 @@ library(scDblFinder)
 # Read in the data
 
 ```{r, include=FALSE}
-B16_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE228014_B16F10_processed.txt")
+B16_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE228014_B16F10_processed.txt")
 ```
 
 
@@ -101,11 +101,11 @@ cluster_ids <- levels(B16_tumour_so_norm$seurat_clusters)
 ```
 
 ```{r, include=FALSE}
-cluster_labels <- c("Tumour cells", 
-                 "Tumour cells", 
-                 "Tumour cells",
-                 "Tumour cells",
-                 "Tumour cells",
+cluster_labels <- c("Malignant cells", 
+                 "Malignant cells", 
+                 "Malignant cells",
+                 "Malignant cells",
+                 "Malignant cells",
                  "5")
 ```
 
@@ -120,7 +120,7 @@ B16_tumour_so_norm$seurat_clusters <- cluster_labels[B16_tumour_so_norm$seurat_c
 
 ```{r, include=FALSE}
 B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters, levels = c(
-            "Tumour cells", 
+            "Malignant cells", 
             "5"))
 ```
 
@@ -132,7 +132,7 @@ Idents(B16_tumour_so_norm) <- "seurat_clusters"
 
 DotPlot(object = B16_tumour_so_norm, features = c(
   "Mitf", "Sox10", "Pax3", "Ednrb", # Melanocytes
-  "Epcam", "Krt8", "Krt18", "Krt19", "Muc1", "Top2a", "Pcna", # Tumour cells
+  "Epcam", "Krt8", "Krt18", "Krt19", "Muc1", "Top2a", "Pcna", # Malignant cells
   "Cdh5", "Pecam1", "Igfbp3", "Igfbp7", # Endothelial cells
   "Col1a1", "Col1a2", "Serping1", "Dcn", # Cancer-associated fibroblasts
   "Cd209a", "Itgam", "Ccr2", "Ly6c2", # Monocytes
@@ -206,7 +206,7 @@ B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters)
 
 ```{r, include=FALSE}
 B16_tumour_so_norm$seurat_clusters <- factor(B16_tumour_so_norm$seurat_clusters, levels = c(
-            "Tumour cells", 
+            "Malignant cells", 
             "Endothelial cells/CAFs",
             "Monocytes/macrophages"))
 ```
@@ -242,8 +242,8 @@ B16_tumour_so_norm$seurat_clusters <- factor(
 
 
 B16_cluster_colours <- c(
-    "Tumour cells"         = "#C0C0C0",
-    "ECs/CAFs"             = "#BFFF00",
+    "Malignant cells"       = "#C0C0C0",
+    "ECs/CAFs"              = "#BFFF00",
     "Monocytes/macrophages" = "#4BB5FF"
 )
 

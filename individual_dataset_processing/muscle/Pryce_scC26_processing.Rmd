@@ -33,11 +33,6 @@ library(scDblFinder)
 
 # Read in data
 
-```{r, include=FALSE}
-getwd()
-```
-
-
 ## CD45- populations
 
 ```{r, include=FALSE}

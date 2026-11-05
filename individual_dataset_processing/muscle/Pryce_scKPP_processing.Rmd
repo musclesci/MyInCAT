@@ -33,24 +33,19 @@ library(scDblFinder)
 
 # Read in data
 
-```{r, include=FALSE}
-getwd()
-```
-
-
 ## CD45- populations
 
 ```{r, include=FALSE}
-KPP_CD45neg_CTL <- Read10X_h5("data/data_muscle/data_Pryce_scKPP/GSM7920260_S61_raw_feature_bc_matrix.h5")
-KPP_CD45neg_KPP <- Read10X_h5("data/data_muscle/data_Pryce_scKPP/GSM7920261_S62_raw_feature_bc_matrix.h5")
+KPP_CD45neg_CTL <- Read10X_h5("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_muscle/data_Pryce_scKPP/GSM7920260_S61_raw_feature_bc_matrix.h5")
+KPP_CD45neg_KPP <- Read10X_h5("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_muscle/data_Pryce_scKPP/GSM7920261_S62_raw_feature_bc_matrix.h5")
 ```
 
 
 ## CD45+ populations
 
 ```{r, include=FALSE}
-KPP_CD45pos_CTL <- Read10X_h5("data/data_muscle/data_Pryce_scKPP/GSM7920262_S63_raw_feature_bc_matrix.h5")
-KPP_CD45pos_KPP <- Read10X_h5("data/data_muscle/data_Pryce_scKPP/GSM7920263_S64_raw_feature_bc_matrix.h5")
+KPP_CD45pos_CTL <- Read10X_h5("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_muscle/data_Pryce_scKPP/GSM7920262_S63_raw_feature_bc_matrix.h5")
+KPP_CD45pos_KPP <- Read10X_h5("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_muscle/data_Pryce_scKPP/GSM7920263_S64_raw_feature_bc_matrix.h5")
 ```
 
 

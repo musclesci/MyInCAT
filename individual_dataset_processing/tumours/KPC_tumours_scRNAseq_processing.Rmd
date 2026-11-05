@@ -28,9 +28,9 @@ library(scDblFinder)
 # Read in the data
 
 ```{r, include=FALSE}
-KPC_med_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE126388_scRNAseq_KPC_tumours/GSE126388_KPC_med.txt", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE, row.names = NULL)
+KPC_med_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE126388_scRNAseq_KPC_tumours/tumours_scRNAseq/GSE126388_KPC_med.txt", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE, row.names = NULL)
 
-KPC_large_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE126388_scRNAseq_KPC_tumours/GSE126388_KPC_large.txt", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE, row.names = NULL)
+KPC_large_tumour_data <- read.delim("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE126388_scRNAseq_KPC_tumours/tumours_scRNAseq/GSE126388_KPC_large.txt", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE, row.names = NULL)
 ```
 
 
@@ -249,15 +249,15 @@ DEGs_KPC_combined <- FindAllMarkers(
 ```
 
 ```{r, include=FALSE}
-cluster_labels <- c("Tumour cells", 
-                 "Tumour cells", 
+cluster_labels <- c("Malignant cells", 
+                 "Malignant cells", 
                  "Monocytes/macrophages",
-                 "Tumour cells",
-                 "Tumour cells",
-                 "Tumour cells",
+                 "Malignant cells",
+                 "Malignant cells",
+                 "Malignant cells",
                  "Enterocytes",
                  "CAFs",
-                 "Tumour cells",
+                 "Malignant cells",
                  "Endothelial cells")
 ```
 
@@ -271,7 +271,7 @@ KPC_combined$seurat_clusters <- cluster_labels[KPC_combined$seurat_clusters]
 ## Order clusters
 
 ```{r, include=FALSE}
-KPC_combined$seurat_clusters <- factor(KPC_combined$seurat_clusters, levels = c("Tumour cells", "Endothelial cells", "CAFs", "Monocytes/macrophages", "Enterocytes"))
+KPC_combined$seurat_clusters <- factor(KPC_combined$seurat_clusters, levels = c("Malignant cells", "Endothelial cells", "CAFs", "Monocytes/macrophages", "Enterocytes"))
 ```
 
 ### DotPlot to show differentially expressed genes between clusters
@@ -281,7 +281,7 @@ DefaultAssay(KPC_combined) <- "RNA"
 Idents(KPC_combined) <- "seurat_clusters"
 
 DotPlot(object = KPC_combined, features = c(
-  "Igfbp4", "Kras", "Cldn18", "Ccnd1", "Msln", "Prom1", # Tumour cells
+  "Igfbp4", "Kras", "Cldn18", "Ccnd1", "Msln", "Prom1", # Malignant cells
   "Sox9", "Hnf1b", "Cftr", "Krt19", # Pancreas-specific cells
   "Cdh5", "Pecam1", "Igfbp3", "Igfbp7", # Endothelial cells
   "Col1a1", "Col1a2", "Serping1", "Dcn", "Fn1", "Mmp13", "Timp1", # Cancer-associated fibroblasts
@@ -346,7 +346,7 @@ Monocytes_macrophages <- JoinLayers(Monocytes_macrophages, what = "all")
 ```{r, include=FALSE}
 Idents(Monocytes_macrophages) <- "seurat_clusters"
 
-Monocytes_macrophages_cluster_labels <- c("Monocytes", "Macrophages", "Tumour cells", "Macrophages", "Monocytes")
+Monocytes_macrophages_cluster_labels <- c("Monocytes", "Macrophages", "Malignant cells", "Macrophages", "Monocytes")
 
 Monocytes_macrophages_clusters <- Monocytes_macrophages@meta.data$seurat_clusters
 
@@ -370,7 +370,7 @@ rm(Monocytes_macrophages, DEGs_Monocytes_macrophages, Monocytes_macrophages_clus
 ## Order clusters again
 
 ```{r, include=FALSE}
-KPC_combined$seurat_clusters <- factor(KPC_combined$seurat_clusters, levels = c("Tumour cells", "Endothelial cells", "CAFs", "Monocytes", "Macrophages"))
+KPC_combined$seurat_clusters <- factor(KPC_combined$seurat_clusters, levels = c("Malignant cells", "Endothelial cells", "CAFs", "Monocytes", "Macrophages"))
 ```
 
 
@@ -385,7 +385,7 @@ rm(anchors_merge, counts_KPC_large, counts_KPC_med, KPC_large_tumour_data, KPC_l
 
 ```{r}
 KPC_cluster_colours <- c(
-    "Tumour cells"         = "#C0C0C0",
+    "Malignant cells"      = "#C0C0C0",
     "Endothelial cells"    = "#FFFF00",
     "CAFs"                 = "#7CFC00",
     "Monocytes"            = "#80E5FF",

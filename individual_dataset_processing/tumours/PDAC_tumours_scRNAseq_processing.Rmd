@@ -31,39 +31,39 @@ library(harmony)
 ```{r, include=FALSE}
 getwd()
 
-pdac_1_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_1_filtered_feature_bc_matrix")
+pdac_1_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_1_filtered_feature_bc_matrix")
 
-pdac_2_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_2_filtered_feature_bc_matrix")
+pdac_2_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_2_filtered_feature_bc_matrix")
 
-pdac_3_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_3_filtered_feature_bc_matrix")
+pdac_3_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_3_filtered_feature_bc_matrix")
 
-pdac_4_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_4_filtered_feature_bc_matrix")
+pdac_4_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_4_filtered_feature_bc_matrix")
 
-pdac_5_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_5_filtered_feature_bc_matrix")
+pdac_5_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_5_filtered_feature_bc_matrix")
 
-pdac_6_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_6_filtered_feature_bc_matrix")
+pdac_6_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_6_filtered_feature_bc_matrix")
 
-pdac_7_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_7_filtered_feature_bc_matrix")
+pdac_7_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_7_filtered_feature_bc_matrix")
 
-pdac_8_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_8_filtered_feature_bc_matrix")
+pdac_8_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_8_filtered_feature_bc_matrix")
 
-pdac_9_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_9_filtered_feature_bc_matrix")
+pdac_9_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_9_filtered_feature_bc_matrix")
 
-pdac_10_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_10_filtered_feature_bc_matrix")
+pdac_10_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_10_filtered_feature_bc_matrix")
 
-pdac_11a_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_11a_filtered_feature_bc_matrix")
+pdac_11a_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_11a_filtered_feature_bc_matrix")
 
-pdac_11b_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_11b_filtered_feature_bc_matrix")
+pdac_11b_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_11b_filtered_feature_bc_matrix")
 
-pdac_12_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_12_filtered_feature_bc_matrix")
+pdac_12_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_12_filtered_feature_bc_matrix")
 
-pdac_13_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_13_filtered_feature_bc_matrix")
+pdac_13_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_13_filtered_feature_bc_matrix")
 
-pdac_14_data <- Read10X_h5("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_14_filtered_feature_bc_matrix.h5")
+pdac_14_data <- Read10X_h5("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_14_filtered_feature_bc_matrix.h5")
 
-pdac_15_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_15_filtered_feature_bc_matrix")
+pdac_15_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_15_filtered_feature_bc_matrix")
 
-pdac_16_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE155698_scRNAseq_PDAC_tumours/PDAC_16_filtered_gene_bc_matrices")
+pdac_16_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE155698_scRNAseq_PDAC_tumours/PDAC_16_filtered_gene_bc_matrices")
 ```
 
 
@@ -812,7 +812,7 @@ pdac_tumours_combined <- JoinLayers(pdac_tumours_combined, what = "all")
 ```{r, include=FALSE}
 pdac_tumours_combined_cluster_ids <- levels(pdac_tumours_combined$seurat_clusters)
 
-pdac_tumours_combined_cluster_labels <- c("Neutrophils", "Tumour cells", "T cells", "Monocytes/macrophages", "Tumour cells", "T cells/NK cells", "Monocytes/macrophages", "Mast cells", "Tumour cells", "CAFs", "T cells/NK cells", "T cells", "B cells", "Plasma cells", "NK cells", "NK cells", "Pancreatic cells", "Tumour cells", "Tumour cells", "Monocytes/macrophages", "Monocytes/macrophages", "Tumour cells", "Endothelial cells", "Tumour cells", "Monocytes/macrophages", "Platelets")
+pdac_tumours_combined_cluster_labels <- c("Neutrophils", "Malignant cells", "T cells", "Monocytes/macrophages", "Malignant cells", "T cells/NK cells", "Monocytes/macrophages", "Mast cells", "Malignant cells", "CAFs", "T cells/NK cells", "T cells", "B cells", "Plasma cells", "NK cells", "NK cells", "Pancreatic cells", "Malignant cells", "Malignant cells", "Monocytes/macrophages", "Monocytes/macrophages", "Malignant cells", "Endothelial cells", "Malignant cells", "Monocytes/macrophages", "Platelets")
 
 pdac_tumours_combined_clusters <- pdac_tumours_combined@meta.data$seurat_clusters
 
@@ -823,7 +823,7 @@ pdac_tumours_combined$seurat_clusters <- pdac_tumours_combined_cluster_labels[pd
 ## Order clusters
 
 ```{r, include=FALSE}
-pdac_tumours_combined$seurat_clusters <- factor(pdac_tumours_combined$seurat_clusters, levels = c("Pancreatic cells", "Tumour cells", "Endothelial cells", "CAFs", "Platelets", "Mast cells", "Monocytes/macrophages", "Neutrophils", "B cells", "Plasma cells", "T cells", "T cells/NK cells", "NK cells"))
+pdac_tumours_combined$seurat_clusters <- factor(pdac_tumours_combined$seurat_clusters, levels = c("Pancreatic cells", "Malignant cells", "Endothelial cells", "CAFs", "Platelets", "Mast cells", "Monocytes/macrophages", "Neutrophils", "B cells", "Plasma cells", "T cells", "T cells/NK cells", "NK cells"))
 ```
 
 
@@ -967,7 +967,7 @@ rm(T_NK_cells, T_NK_cells_cluster_labels, T_NK_cells_clusters)
 ## Re-order clusters
 
 ```{r, include=FALSE}
-pdac_tumours_combined$seurat_clusters <- factor(pdac_tumours_combined$seurat_clusters, levels = c("Pancreatic cells", "Tumour cells", "Endothelial cells", "CAFs", "Platelets", "Mast cells", "Monocytes", "Macrophages", "Neutrophils", "B cells", "Plasma cells", "T cells", "NK cells"))
+pdac_tumours_combined$seurat_clusters <- factor(pdac_tumours_combined$seurat_clusters, levels = c("Pancreatic cells", "Malignant cells", "Endothelial cells", "CAFs", "Platelets", "Mast cells", "Monocytes", "Macrophages", "Neutrophils", "B cells", "Plasma cells", "T cells", "NK cells"))
 ```
 
 
@@ -981,10 +981,10 @@ rm(all_genes_pdac_tumour_1, all_genes_pdac_tumour_2, all_genes_pdac_tumour_3, al
 ## Visualize clusters
 
 ```{r}
-PDAC_cluster_colours <- c(
+pdac_cluster_colours <- c(
     "Pancreatic cells"     = "#E00000",
-    "Tumour cells"         = "#C0C0C0",
-    "Endothelial cells"    = "#FFFF00",
+    "Malignant cells"      = "#C0C0C0",
+    "Endothelial cells"    = "#D2B48C",
     "CAFs"                 = "#7CFC00",
     "Platelets"            = "#D46A6A",
     "Mast cells"           = "#C85C8C",
@@ -997,7 +997,7 @@ PDAC_cluster_colours <- c(
     "NK cells"             = "#5B0E8A"
 )
 
-DimPlot(pdac_tumours_combined, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1, cols = PDAC_cluster_colours) +
+DimPlot(pdac_tumours_combined, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1, cols = pdac_cluster_colours) +
     ggplot2::labs(title = "", x = "umap1", y = "umap2") +
     theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
 ```

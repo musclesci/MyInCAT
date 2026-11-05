@@ -28,7 +28,7 @@ library(scDblFinder)
 # Read in the data
 
 ```{r, include=FALSE}
-LLC_tumour_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE256051_scRNAseq_LLC_tumour")
+LLC_tumour_data <- Read10X("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE256051_scRNAseq_LLC_tumour")
 ```
 
 
@@ -119,15 +119,15 @@ cluster_ids <- levels(LLC_tumour_singlets$seurat_clusters)
 ```
 
 ```{r, include=FALSE}
-cluster_labels <- c("Tumour cells", 
-                 "Tumour cells", 
+cluster_labels <- c("Malignant cells", 
+                 "Malignant cells", 
                  "Monocytes/macrophages",
-                 "Tumour cells",
-                 "Tumour cells",
-                 "Tumour cells",
-                 "Tumour cells",
+                 "Malignant cells",
+                 "Malignant cells",
+                 "Malignant cells",
+                 "Malignant cells",
                  "T cells/NK cells",
-                 "Tumour cells",
+                 "Malignant cells",
                  "ECs/CAFs")
 ```
 
@@ -142,7 +142,7 @@ LLC_tumour_singlets$seurat_clusters <- cluster_labels[LLC_tumour_singlets$seurat
 
 ```{r, include=FALSE}
 LLC_tumour_singlets$seurat_clusters <- factor(LLC_tumour_singlets$seurat_clusters, levels = c(
-            "Tumour cells", 
+            "Malignant cells", 
             "ECs/CAFs",
             "Monocytes/macrophages",
             "T cells/NK cells"))
@@ -155,7 +155,7 @@ DefaultAssay(LLC_tumour_singlets) <- "RNA"
 Idents(LLC_tumour_singlets) <- "seurat_clusters"
 
 DotPlot(object = LLC_tumour_singlets, features = c(
-  "Myc", "Igfbp4", "Rhox5", "Nedd4", # Tumour cells
+  "Myc", "Igfbp4", "Rhox5", "Nedd4", # Malignant cells
   "Cdh5", "Pecam1", "Igfbp3", "Igfbp7", # Endothelial cells
   "Col1a1", "Col1a2", "Serping1", "Dcn", # Cancer-associated fibroblasts
   "Fscn1", "Flt3", # Dendritic cells
@@ -235,7 +235,7 @@ rm(LLC_tumour_data, LLC_tumour_dbl, LLC_tumour_seurat, LLC_tumour_seurat_filtere
 ## Order clusters again
 
 ```{r, include=FALSE}
-LLC_tumour_singlets$seurat_clusters <- factor(LLC_tumour_singlets$seurat_clusters, levels = c("Tumour cells", "ECs/CAFs", "Dendritic cells", "Monocytes", "Macrophages", "Neutrophils", "T cells/NK cells"))
+LLC_tumour_singlets$seurat_clusters <- factor(LLC_tumour_singlets$seurat_clusters, levels = c("Malignant cells", "ECs/CAFs", "Dendritic cells", "Monocytes", "Macrophages", "Neutrophils", "T cells/NK cells"))
 ```
 
 
@@ -243,7 +243,7 @@ LLC_tumour_singlets$seurat_clusters <- factor(LLC_tumour_singlets$seurat_cluster
 
 ```{r}
 LLC_cluster_colours <- c(
-    "Tumour cells"         = "#C0C0C0",
+    "Malignant cells"      = "#C0C0C0",
     "ECs/CAFs"             = "#BFFF00",
     "Dendritic cells"      = "#B84D9E",
     "Monocytes"            = "#80E5FF",

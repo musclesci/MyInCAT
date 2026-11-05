@@ -28,7 +28,7 @@ library(scDblFinder)
 # Read in the data
 
 ```{r, include=FALSE}
-MC38_tumour_so <- readRDS("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/GSE231803_scRNAseq_MC38_immune_Seurat_Object.rds")
+MC38_tumour_so <- readRDS("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_scRNAseq/GSE231803_scRNAseq_MC38_immune_Seurat_Object.rds")
 ```
 
 
@@ -158,7 +158,7 @@ DefaultAssay(MC38_tumour_singlets) <- "RNA"
 Idents(MC38_tumour_singlets) <- "seurat_clusters"
 
 DotPlot(object = MC38_tumour_singlets, features = c(
-  "Myc", "Igfbp4", "Rhox5", "Nedd4", # Tumour cells
+  "Myc", "Igfbp4", "Rhox5", "Nedd4", # Malignant cells
   "Cdh5", "Pecam1", "Igfbp3", "Igfbp7", # Endothelial cells
   "Col1a1", "Col1a2", "Serping1", "Dcn", # Cancer-associated fibroblasts
   "Fscn1", "Flt3", # Dendritic cells

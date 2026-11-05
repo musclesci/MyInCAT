@@ -510,10 +510,28 @@ PDAC_combined$orig.ident <- factor(PDAC_combined$orig.ident, levels = c("PDAC_CT
 
 # 8. Visualize
 
+## Cluster colours
+
+```{r, include=FALSE}
+cluster_colours <- c(
+  "Satellite cells"       = "#FF7FBF", 
+  "Myonuclei"             = "#E00000", 
+  "Endothelial cells"     = "#D2B48C", 
+  "vSMCs/pericytes"       = "#A47C16", 
+  "FAPs"                  = "#7CFC00", 
+  "Platelets"             = "#D46A6A", 
+  "Mast cells"            = "#C85C8C", 
+  "Monocytes/macrophages" = "#99CBFF", 
+  "Neutrophils"           = "#4169E1", 
+  "T cells/NK cells"      = "#882DC5"
+)
+```
+
+
 ## UMAP clusters
 
 ```{r}
-DimPlot(PDAC_combined, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+DimPlot(PDAC_combined, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1, cols = cluster_colours) +
   ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
   theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
 ```
@@ -586,148 +604,4 @@ DimPlot(
 PDAC_cell_counts_cluster <- table(PDAC_combined@meta.data$seurat_clusters, PDAC_combined@meta.data$orig.ident)
 
 print(PDAC_cell_counts_cluster)
-```
-
-
-
-# 9. Subset
-
-
-## Conditions
-
-```{r, include=FALSE}
-Idents(PDAC_combined) <- "orig.ident"
-
-PDAC_CTL <- subset(PDAC_combined, idents = "PDAC_CTL")
-PDAC_WS <- subset(PDAC_combined, idents = "PDAC_WS")
-PDAC_cac <- subset(PDAC_combined, idents = "PDAC_cachectic")
-```
-
-
-## Clusters
-
-```{r, include=FALSE}
-Idents(PDAC_combined) <- "seurat_clusters"
-
-PDAC_MuSCs <- subset(PDAC_combined, idents = "MuSCs")
-PDAC_Myonuclei <- subset(PDAC_combined, idents = "Myonuclei")
-PDAC_Endothelial_cells <- subset(PDAC_combined, idents = "Endothelial cells")
-PDAC_vSMCs_pericytes <- subset(PDAC_combined, idents = "vSMCs/pericytes")
-PDAC_FAPs <- subset(PDAC_combined, idents = "FAPs")
-PDAC_Platelets <- subset(PDAC_combined, idents = "Platelets")
-PDAC_Mast_cells <- subset(PDAC_combined, idents = "Mast cells")
-PDAC_Monocytes_macrophages <- subset(PDAC_combined, idents = "Monocytes/macrophages")
-PDAC_Neutrophils <- subset(PDAC_combined, idents = "Neutrophils")
-PDAC_T_NK_cells <- subset(PDAC_combined, idents = "T cells/NK cells")
-```
-
-
-## DEGs per condition for each cluster
-
-```{r, include=FALSE}
-Idents(PDAC_MuSCs) <- "orig.ident"
-Idents(PDAC_Myonuclei) <- "orig.ident"
-Idents(PDAC_Endothelial_cells) <- "orig.ident"
-Idents(PDAC_vSMCs_pericytes) <- "orig.ident"
-Idents(PDAC_FAPs) <- "orig.ident"
-Idents(PDAC_Platelets) <- "orig.ident"
-Idents(PDAC_Mast_cells) <- "orig.ident"
-Idents(PDAC_Monocytes_macrophages) <- "orig.ident"
-Idents(PDAC_Neutrophils) <- "orig.ident"
-Idents(PDAC_T_NK_cells) <- "orig.ident"
-
-DEGs_PDAC_MuSCs <- FindAllMarkers(object = PDAC_MuSCs, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_Myonuclei <- FindAllMarkers(object = PDAC_Myonuclei, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_Endothelial_cells <- FindAllMarkers(object = PDAC_Endothelial_cells, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_vSMCs_pericytes <- FindAllMarkers(object = PDAC_vSMCs_pericytes, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_FAPs <- FindAllMarkers(object = PDAC_FAPs, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_Platelets <- FindAllMarkers(object = PDAC_Platelets, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_Mast_cells <- FindAllMarkers(object = PDAC_Mast_cells, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_Monocytes_macrophages <- FindAllMarkers(object = PDAC_Monocytes_macrophages, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_Neutrophils <- FindAllMarkers(object = PDAC_Neutrophils, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-DEGs_PDAC_T_NK_cells <- FindAllMarkers(object = PDAC_T_NK_cells, group.by = "orig.ident", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-
-
-# Visualize PDAC MuSC gene expression (from mouse cachectic subcluster list)
-
-```{r}
-common_cachectic_genes <- c(
- "FTH1", "LMNA", "EIF1", "PNRC1", "NFKBIA", "CEBPB", "IFITM3", "SAT1" 
-)
-
-Idents(PDAC_MuSCs) <- "orig.ident"
-
-vln_plots_mouse_genes <- lapply(common_cachectic_genes, function(gene) {
-  VlnPlot(PDAC_MuSCs, features = gene, pt.size = 0) +
-    theme(
-      legend.position = "none",
-      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
-    ) +
-    labs(x = NULL, y = "Expression", title = gene)
-})
-
-do.call(grid.arrange, c(vln_plots_mouse_genes, ncol = 4))
-```
-
-
-## Expression values
-
-```{r}
-common_cachectic_genes_expression <- FetchData(PDAC_MuSCs, vars = c(common_cachectic_genes, "orig.ident"))
-
-common_cachectic_genes_expression <- common_cachectic_genes_expression %>%
-  group_by(orig.ident) %>%
-  summarise(across(all_of(common_cachectic_genes), mean, .names = "avg_{.col}"))
-
-common_cachectic_genes_expression <- common_cachectic_genes_expression %>%
-  column_to_rownames("orig.ident") %>%
-  t() %>%
-  as.data.frame()
-
-print(common_cachectic_genes_expression)
-```
-
-
-
-# Visualize PDAC MuSC gene expression (from PDAC DEGs list)
-
-```{r}
-top_cachectic_genes <- c(
- "MT-CO2", "TRDN", "MT-ND4", "TPT1", "MT-ND2", "MT-CO1", "DES", "TNNC2", "RPL7" 
-)
-
-Idents(PDAC_MuSCs) <- "orig.ident"
-
-vln_plots_PDAC <- lapply(top_cachectic_genes, function(gene) {
-  VlnPlot(PDAC_MuSCs, features = gene, pt.size = 0) +
-    theme(
-      legend.position = "none",
-      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
-    ) +
-    labs(x = NULL, y = "Expression", title = gene)
-})
-
-do.call(grid.arrange, c(vln_plots_PDAC, ncol = 4))
-
-FetchData(PDAC_MuSCs, vars = c(top_cachectic_genes, "orig.ident"))
-```
-
-
-## Expression values
-
-```{r}
-top_cachectic_genes_expression <- FetchData(PDAC_MuSCs, vars = c(top_cachectic_genes, "orig.ident"))
-
-top_cachectic_genes_expression <- top_cachectic_genes_expression %>%
-  group_by(orig.ident) %>%
-  summarise(across(all_of(top_cachectic_genes), mean, .names = "avg_{.col}"))
-
-top_cachectic_genes_expression <- top_cachectic_genes_expression %>%
-  column_to_rownames("orig.ident") %>%
-  t() %>%
-  as.data.frame()
-
-print(top_cachectic_genes_expression)
 ```
