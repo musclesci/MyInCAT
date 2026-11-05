@@ -72,42 +72,7 @@ rm(not_in_model, pdac_receptors)
 
 
 
-# Run GO terms on all receptors picking up signals from tumours
-
-```{r, include=FALSE}
-pdac_receptors_go <- enrichGO(gene = pdac_receptors_use, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL", ont = "BP")
-```
-
-```{r, include=FALSE}
-write.csv(pdac_receptors_go, file = "pdac_receptors_go.csv", row.names = TRUE)
-```
-
-
-## Visualize top 10 GO terms
-
-```{r}
-pdac_receptors_go_top10 <- pdac_receptors_go[1:10, ]
-
-ggplot(pdac_receptors_go_top10, aes(x = FoldEnrichment, 
-                           y = reorder(Description, FoldEnrichment),
-                           size = Count, 
-                           color = p.adjust)) +
-  geom_point() +
-  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
-  labs(x = "Fold Enrichment", y = NULL, 
-       title = "UP GO PDAC muscle receptors") +
-  theme_minimal() +
-  theme(
-    axis.line = element_line(color = "black"),
-    axis.ticks = element_line(color = "black")
-  )
-```
-
-
-
-# Run KEGG pathway analysis on the receptors that are upregulated in cachectic muscle
-
-### Get DEGs in cachectic muscle
+# Get DEGs in cachectic muscle
 
 ```{r, include=FALSE}
 Idents(pdac_muscle) <- "orig.ident"
@@ -126,14 +91,12 @@ DEGs_pdac_receptors <- DEGs_pdac_receptors[rownames(DEGs_pdac_receptors) %in% pd
 rownames(DEGs_pdac_receptors)
 ```
 
-### DON'T BOTHER WITH KEGG PATHWAY BECAUSE THERE ARE ONLY 2 UPREGULATED GENES!
-
 
 
 # Remove unused objects
 
 ```{r, include=FALSE}
-rm(DEGs_pdac_receptors, pdac_receptors_go, pdac_receptors_go_top10)
+rm(DEGs_pdac_receptors)
 ```
 
 
@@ -306,48 +269,4 @@ VlnPlot(pdac_ligands_score, features = "signature_1pdac_ligands_score", group.by
   theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
   labs(x = NULL, y = "PDAC ligands score", title = NULL) +
   geom_hline(yintercept = 0, linetype = "solid", color = "black")
-```
-
-
-
-# What receptor genes are upregulated in cachectic endothelial cells in the muscle?
-
-### Subset for endothelial cells
-
-```{r, include=FALSE}
-Idents(pdac_muscle) <- "seurat_clusters"
-
-pdac_ECs <- subset(pdac_muscle, idents = "Endothelial cells")
-```
-
-### DEGs in cachectic endothelial cells
-
-```{r, include=FALSE}
-Idents(pdac_ECs) <- "orig.ident"
-
-DEGs_pdac_ECs <- FindMarkers(pdac_ECs, ident.1 = "PDAC_cachectic", ident.2 = c("PDAC_CTL", "PDAC_WS"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
-```
-
-### Subset DEGs for p_val_adj < 0.05, avg_log2FC > 0.2, included in pdac_receptors_use
-
-```{r}
-DEGs_pdac_ECs_from_tumour <- subset(DEGs_pdac_ECs, p_val_adj < 0.05 & avg_log2FC > 0.2)
-
-DEGs_pdac_ECs_from_tumour <- DEGs_pdac_ECs_from_tumour[
-    rownames(DEGs_pdac_ECs_from_tumour) %in% pdac_receptors_use,
-]
-
-rownames(DEGs_pdac_ECs_from_tumour)
-```
-
-### Violin plots
-
-```{r}
-VlnPlot(pdac_ECs, features = "EGFR", pt.size = 0) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-  labs(x = NULL, y = "Expression", title = "EGFR")
-
-VlnPlot(pdac_ECs, features = "ERBB4", pt.size = 0) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-  labs(x = NULL, y = "Expression", title = "ERBB4")
 ```
