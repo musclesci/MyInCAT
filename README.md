@@ -6,7 +6,7 @@ We present the Myogenic single-cell Integration of Cachexia-Associated Transcrip
 Reference this paper: 
 Brown, A., Lafond, I., De Lisio, M., Wiper-Bergeron, N. (2026). Tumour-secreted signals propagate muscle inflammatory signaling and indirectly target myofibres in cancer cachexia. J Cachexia Sarcopenia Muscle. 
 
-Link to MyInCAT web resource: 
+Link to the MyInCAT web resource: 
 myincat.org
 
 Codes related to the MyInCAT website design:
