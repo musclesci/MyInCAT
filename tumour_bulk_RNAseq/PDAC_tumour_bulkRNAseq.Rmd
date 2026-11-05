@@ -1,0 +1,269 @@
+---
+title: "PDAC_tumour_bulkRNAseq"
+author: "Alex Brown"
+date: "2026-01-14"
+output: html_document
+---
+
+
+
+# Load libraries
+
+```{r, include=FALSE}
+library(DESeq2)
+library(clusterProfiler)
+library(tximport)
+library(apeglm)
+library(knitr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(pheatmap)
+library(EnhancedVolcano)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(readxl)
+library(CellChat)
+```
+
+
+
+# Read in the data for GSE119794
+
+```{r, include=FALSE}
+pdac_tumour_RNAseq <- read_excel("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_bulk_RNAseq/GSE119794_raw_counts_PDAC_tumours.xlsx")
+```
+
+
+
+# Filter low counts
+
+```{r, include=FALSE}
+pdac_tumour_RNAseq <- pdac_tumour_RNAseq[which(rowSums(pdac_tumour_RNAseq) > 10),]
+```
+
+
+
+# Convert to matrix
+
+```{r, include=FALSE}
+pdac_tumour_mat <- as.matrix(pdac_tumour_RNAseq[,-1])
+
+rownames(pdac_tumour_mat) <- pdac_tumour_RNAseq[[1]]
+```
+
+
+
+# Make vector describing the experimental conditions and add to metadata (Sample Table)
+
+```{r, include=FALSE}
+samples <- colnames(pdac_tumour_mat)
+
+# Extract the condition (pancreas vs tumour) from the suffix
+condition <- ifelse(grepl("_pancreas$", samples), "pancreas", "tumour")
+condition <- factor(condition, levels = c("pancreas", "tumour"))
+
+# Extract the sample IDs (P01, P02, etc.) from the beginning
+sample_id <- sub("_.*$", "", samples)
+
+# Build the sample table
+sample_table <- data.frame(
+  sample_id = sample_id,
+  sample_name = samples,
+  condition = condition
+)
+```
+
+
+
+# Filter out low counts by condition
+
+```{r, include=FALSE}
+pdac_tumour_RNAseq <- pdac_tumour_RNAseq[
+  rowSums(pdac_tumour_RNAseq[, sample_table$sample_name[sample_table$condition == "pancreas"]] >= 5) >= 2 |
+  rowSums(pdac_tumour_RNAseq[, sample_table$sample_name[sample_table$condition == "tumour"]] >= 5) >= 2,
+]
+```
+
+
+
+# Create DESeqDataSet object
+
+```{r, include=FALSE}
+pdac_tumour_dds <- DESeqDataSetFromMatrix(countData = pdac_tumour_mat, colData = sample_table, design = ~condition)
+
+pdac_tumour_dds <- DESeq(pdac_tumour_dds)
+```
+
+
+
+# Regularized log transform of counts
+
+```{r, include=FALSE}
+pdac_tumour_rlog <- rlog(pdac_tumour_dds)
+```
+
+
+
+# Quality check
+
+## Plot PCA
+
+```{r}
+plotPCA(pdac_tumour_rlog, intgroup = "condition")
+```
+
+
+## Plot dispersion estimate
+
+```{r}
+plotDispEsts(pdac_tumour_dds)
+```
+
+
+## Hierarchical clustering
+
+```{r}
+hc_colours <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+sampleDists <- dist(t(assay(pdac_tumour_rlog)))
+sdm <- as.matrix(sampleDists)
+rownames(sdm) <- colData(pdac_tumour_rlog)$sample_name
+colnames(sdm) <- colData(pdac_tumour_rlog)$sample_name
+```
+
+### Clustered
+
+```{r, include=FALSE}
+pheatmap(sdm, color = hc_colours, border_color = NA, legend = TRUE)
+```
+
+### Sample order
+
+```{r}
+pheatmap(sdm, color = hc_colours, border_color = NA, legend = TRUE, cluster_rows = FALSE, cluster_cols = FALSE)
+```
+
+
+
+# Remove unused objects from the environment
+
+```{r, include=FALSE}
+rm(pdac_tumour_RNAseq, pdac_tumour_rlog, pdac_tumour_mat, sample_table, sdm, hc_colours, sampleDists)
+```
+
+
+
+# Differentially expressed genes
+
+```{r, include=FALSE}
+pdac_tumour_results <- results(pdac_tumour_dds, contrast = c("condition", "tumour", "pancreas"), alpha = 0.05)
+
+pdac_tumour_results <- lfcShrink(pdac_tumour_dds, coef = "condition_tumour_vs_pancreas", res = pdac_tumour_results, type = "apeglm")
+```
+
+
+## Change geneIDs to gene names
+
+```{r, include=FALSE}
+pdac_tumour_results$symbol <- mapIds(org.Hs.eg.db, keys = rownames(pdac_tumour_results), keytype = "ENTREZID", column = "SYMBOL", multiVals = "first")
+
+pdac_tumour_results$symbol[is.na(pdac_tumour_results$symbol)] <- rownames(pdac_tumour_results)[is.na(pdac_tumour_results$symbol)]
+
+rownames(pdac_tumour_results) <- pdac_tumour_results$symbol
+```
+
+
+## Filter for padj < 0.05 and log2FoldChange > 0.2
+
+```{r, include=FALSE}
+pdac_tumour_results_df <- as.data.frame(pdac_tumour_results)
+
+pdac_tumour_deg_up <- pdac_tumour_results_df[
+  pdac_tumour_results_df$padj < 0.05 & 
+  pdac_tumour_results_df$log2FoldChange > 0.2, 
+]
+
+pdac_tumour_deg_up <- pdac_tumour_deg_up[ 
+  !is.na(pdac_tumour_deg_up$padj) & 
+  !is.na(pdac_tumour_deg_up$log2FoldChange), 
+]
+```
+
+
+## Export DEGs upregulated in tumours
+
+```{r, include=FALSE}
+write.csv(pdac_tumour_deg_up, file = "pdac_tumour_up.csv", row.names = TRUE)
+```
+
+
+
+# Filter upregulated genes for secreted proteins from the Human Protein Atlas
+
+## Filter secreted protein list from HPA
+### NOTE - I downloaded a list of HPA.
+
+```{r, include=FALSE}
+hpa <- read.delim("C:/Users/nwb_l/Documents/r_projects/proteinatlas.tsv", stringsAsFactors = FALSE)
+
+hpa_secreted <- hpa[grepl("Secreted proteins|Predicted secreted proteins", hpa$Protein.class), ]
+
+# Human secreted gene list
+hpa_secreted_genes <- hpa_secreted$Ensembl
+```
+
+
+## Add ENSEMBL IDs to pdac_tumour_deg_up
+
+```{r, include=FALSE}
+pdac_tumour_deg_up$ensembl <- mapIds(
+  org.Hs.eg.db,
+  keys = pdac_tumour_deg_up$symbol,
+  column = "ENSEMBL",
+  keytype = "SYMBOL",
+  multiVals = "first"
+)
+```
+
+
+## Filter pdac_tumour_deg_up for secreted genes
+
+```{r, include=FALSE}
+pdac_tumour_secreted <- pdac_tumour_deg_up[pdac_tumour_deg_up$ensembl %in% hpa_secreted_genes, ]
+```
+
+
+## Get a list of the genes that are secreted
+
+```{r, include=FALSE}
+pdac_tumour_secreted_genes <- pdac_tumour_secreted$symbol
+
+write.table(pdac_tumour_secreted_genes, 
+            file = "PDAC_secreted_genes.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```
+
+
+## Get list of matching receptors for secreted genes
+
+```{r, include=FALSE}
+# Load the built-in human ligand-receptor database
+CellChatDB <- CellChatDB.human
+
+# Subset the interactions table for ligands in your secreted gene list
+lr_PDAC <- subset(CellChatDB$interaction, ligand %in% pdac_tumour_secreted_genes)
+
+# Extract receptors that line up with secreted genes
+pdac_receptors <- unique(trimws(unlist(strsplit(lr_PDAC$receptor.symbol, ","))))
+```
+
+```{r, include=FALSE}
+write.table(pdac_receptors, 
+            file = "PDAC_secreted_genes_receptors.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```

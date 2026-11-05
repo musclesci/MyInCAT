@@ -1,0 +1,218 @@
+---
+title: "B16_tumour_bulkRNAseq"
+author: "Alex Brown"
+date: "2025-11-11"
+output: html_document
+---
+
+
+
+# Load libraries
+
+```{r, include=FALSE}
+library(readxl)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(biomaRt)
+library(CellChat)
+```
+
+
+
+# Read in data
+
+```{r, include=FALSE}
+B16_tumour_RNAseq <- read_excel("C:/Users/nwb_l/Documents/r_projects/scIntegration/rdata/data_tumours/tumours_bulk_RNAseq/GSE294100_B16_counts.xlsx")
+```
+
+
+
+# Make vector describing the experimental conditions and add to metadata (Sample Table)
+
+```{r, include=FALSE}
+# Prepare counts matrix
+B16_counts <- B16_tumour_RNAseq[, "B16F10_1", drop = FALSE]
+
+B16_counts <- B16_counts[!duplicated(B16_tumour_RNAseq$refGene), ]
+
+rownames(B16_counts) <- B16_tumour_RNAseq$refGene[!duplicated(B16_tumour_RNAseq$refGene)]
+
+
+# Convert refGene to ENSEMBL
+ensembl_ids <- mapIds(
+  org.Mm.eg.db,
+  keys = rownames(B16_counts),
+  keytype = "SYMBOL",
+  column = "ENSEMBL",
+  multiVals = "first"  # if multiple ENSEMBL IDs, take the first
+)
+
+B16_counts_df <- data.frame(
+  ensembl_id = ensembl_ids[rownames(B16_counts)],
+  B16_counts,
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+# Make ensemble_id rownames
+B16_counts_df <- B16_counts_df[!is.na(B16_counts_df$ensembl_id), ]
+
+B16_counts_df <- B16_counts_df[!duplicated(B16_counts_df$ensembl_id), ]
+
+rownames(B16_counts_df) <- B16_counts_df$ensembl_id
+
+B16_counts_df$ensembl_id <- NULL
+```
+
+
+
+# Calculate TPM
+
+```{r, include=FALSE}
+# Make sure counts are numeric
+B16_counts_df <- as.matrix(B16_counts_df)
+storage.mode(B16_counts_df) <- "numeric"
+
+
+
+# 2. Gene lengths (in base pairs)
+# Connect to Ensembl
+ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
+
+gene_info <- getBM(
+  attributes = c("ensembl_gene_id", "start_position", "end_position"),
+  filters = "ensembl_gene_id",
+  values = rownames(B16_counts_df),
+  mart = ensembl
+)
+
+# Calculate gene lengths in base pairs
+gene_info$length <- gene_info$end_position - gene_info$start_position + 1
+
+# Make a vector of lengths in the same order as your counts matrix
+lengths_kb <- gene_info$length[match(rownames(B16_counts_df), gene_info$ensembl_gene_id)] / 1000
+
+B16_counts_df <- B16_counts_df[!is.na(lengths_kb), , drop = FALSE]
+lengths_kb <- lengths_kb[!is.na(lengths_kb)]
+
+
+
+# 3. Compute RPK (Reads Per Kilobase)
+B16_rpk <- B16_counts_df / lengths_kb
+
+
+
+# 4. Compute TPM
+B16_TPM <- apply(B16_rpk, 2, function(x) (x / sum(x)) * 1e6)
+
+
+
+# 5. Check results
+head(B16_TPM)
+colSums(B16_TPM)  # each column should sum to ~1e6
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(B16_counts, gene_info, B16_tumour_RNAseq, B16_rpk, lengths_kb, ensembl)
+```
+
+
+
+# Get list of genes for "Secreted" proteins from Human Protein Atlas, then map to mouse orthologs
+
+## Filter secreted protein list from HPA
+### NOTE - I downloaded a list of HPA.
+
+```{r, include=FALSE}
+hpa <- read.delim("C:/Users/nwb_l/Documents/r_projects/proteinatlas.tsv", stringsAsFactors = FALSE)
+
+hpa_secreted <- hpa[grepl("Secreted proteins|Predicted secreted proteins", hpa$Protein.class), ]
+
+# Human secreted gene list
+hpa_secreted_genes <- hpa_secreted$Ensembl
+```
+
+
+## Map human genes to mouse orthologs
+### NOTE - I downloaded a file from BioMart that converted human genes to mouse orthologs
+
+```{r, include=FALSE}
+orthologs <- read.table("C:/Users/nwb_l/Documents/r_projects/human_to_mouse_orthologs.txt", header = TRUE, stringsAsFactors = FALSE, sep = "", fill = TRUE)
+
+# Subset for orthology_confidence = 1 (high confidence of gene mapping)
+orthologs <- orthologs[orthologs$orthology_confidence == 1, ]
+
+# Filter orthologs for human secreted proteins
+orthologs_secreted <- orthologs[orthologs$human_gene_id %in% hpa_secreted_genes, ]
+
+# Filter orthologs for mouse genes
+B16_secreted_ids <- unique(orthologs_secreted$mouse_gene_id)
+```
+
+
+## Filter TPM for secreted genes, then for TPM > 0
+
+```{r, include=FALSE}
+B16_TPM_secreted <- B16_TPM[rownames(B16_TPM) %in% B16_secreted_ids, , drop = FALSE]
+
+B16_TPM_secreted <- B16_TPM_secreted[B16_TPM_secreted[,1] > 0, , drop = FALSE]
+```
+
+
+## Add in gene names and make rownames
+
+```{r, include=FALSE}
+gene_symbols <- mapIds(
+    org.Mm.eg.db,
+    keys = rownames(B16_TPM_secreted),
+    keytype = "ENSEMBL",
+    column = "SYMBOL",
+    multiVals = "first"
+)
+
+B16_TPM_secreted <- as.data.frame(B16_TPM_secreted)
+
+B16_TPM_secreted$gene_symbol <- gene_symbols[rownames(B16_TPM_secreted)]
+```
+
+
+## Get a list of genes secreted by B16 tumours
+
+```{r, include=FALSE}
+B16_secreted_genes <- B16_TPM_secreted$gene_symbol
+```
+
+```{r, inlcude=FALSE}
+write.table(B16_secreted_genes, 
+            file = "B16_secreted_genes.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```
+
+
+
+# Get list of matching receptors for secreted genes
+
+```{r, include=FALSE}
+# Load the built-in mouse ligand-receptor database
+CellChatDB <- CellChatDB.mouse
+
+# Subset the interactions table for ligands in your secreted gene list
+lr_B16 <- subset(CellChatDB$interaction, ligand %in% B16_secreted_genes)
+
+# Extract receptors that line up with secreted genes
+B16_receptors <- unique(trimws(unlist(strsplit(lr_B16$receptor.symbol, ","))))
+```
+
+```{r, include=FALSE}
+write.table(B16_receptors, 
+            file = "B16_secreted_genes_receptors.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```

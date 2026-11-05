@@ -1,0 +1,180 @@
+---
+title: "KPC_tumour_bulkRNAseq"
+author: "Alex Brown"
+date: "2025-11-12"
+output: html_document
+---
+
+
+
+# Load libraries
+
+```{r, include=FALSE}
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(biomaRt)
+library(CellChat)
+```
+
+
+
+# Read in data
+
+```{r, include=FALSE}
+KPC_tumour_RNAseq <- read.table("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_bulk_RNAseq/GSE101336_KPC_processed_matrix_FPKM.txt", header = TRUE, stringsAsFactors = FALSE)
+```
+
+
+
+# Format data.frame structure
+
+```{r}
+colnames(KPC_tumour_RNAseq) <- c("gene_id", "tss_id", "locus", "KPC_7", "KPC_8", "KPC_9", "KPC_10")
+
+# Convert gene_id to ENSEMBL and make rownames
+ensembl_ids <- mapIds(
+  org.Mm.eg.db,
+  keys = KPC_tumour_RNAseq$gene_id,
+  keytype = "SYMBOL",
+  column = "ENSEMBL",
+  multiVals = "first"  # if multiple ENSEMBL IDs, take the first
+)
+
+KPC_FPKM <- data.frame(
+  ensembl_id = ensembl_ids[KPC_tumour_RNAseq$gene_id],
+  KPC_tumour_RNAseq,
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+KPC_FPKM <- KPC_FPKM[!is.na(KPC_FPKM$ensembl_id), ]
+
+KPC_FPKM <- KPC_FPKM[!duplicated(KPC_FPKM$ensembl_id), ]
+
+rownames(KPC_FPKM) <- KPC_FPKM$ensembl_id
+
+KPC_FPKM$ensembl_id <- NULL
+```
+
+
+
+# KPC FPKM values to TPM
+
+```{r, include=FALSE}
+# Prepare counts matrix
+KPC_FPKM_values <- KPC_FPKM[, c("KPC_7", "KPC_8", "KPC_9", "KPC_10")]
+
+# Make sure values are numeric
+KPC_FPKM_values <- as.matrix(KPC_FPKM_values)
+storage.mode(KPC_FPKM_values) <- "numeric"
+
+# Convert to TPM
+KPC_TPM <- apply(KPC_FPKM_values, 2, function(x) {
+  (x / sum(x, na.rm = TRUE)) * 1e6
+})
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(KPC_FPKM_values, KPC_tumour_RNAseq, ensembl_ids)
+```
+
+
+
+# Get list of genes for "Secreted" proteins from Human Protein Atlas, then map to mouse orthologs
+
+## Filter secreted protein list from HPA
+### NOTE - I downloaded a list of HPA.
+
+```{r, include=FALSE}
+hpa <- read.delim("C:/Users/nwb_l/Documents/r_projects/proteinatlas.tsv", stringsAsFactors = FALSE)
+
+hpa_secreted <- hpa[grepl("Secreted proteins|Predicted secreted proteins", hpa$Protein.class), ]
+
+# Human secreted gene list
+hpa_secreted_genes <- hpa_secreted$Ensembl
+```
+
+
+## Map human genes to mouse orthologs
+### NOTE - I downloaded a file from BioMart that converted human genes to mouse orthologs
+
+```{r, include=FALSE}
+orthologs <- read.table("C:/Users/nwb_l/Documents/r_projects/human_to_mouse_orthologs.txt", header = TRUE, stringsAsFactors = FALSE, sep = "", fill = TRUE)
+
+# Subset for orthology_confidence = 1 (high confidence of gene mapping)
+orthologs <- orthologs[orthologs$orthology_confidence == 1, ]
+
+# Filter orthologs for human secreted proteins
+orthologs_secreted <- orthologs[orthologs$human_gene_id %in% hpa_secreted_genes, ]
+
+# Filter orthologs for mouse genes
+KPC_secreted_ids <- unique(orthologs_secreted$mouse_gene_id)
+```
+
+
+## Filter TPM for secreted genes, then for TPM > 0
+
+```{r, include=FALSE}
+KPC_TPM_secreted <- KPC_TPM[rownames(KPC_TPM) %in% KPC_secreted_ids, ]
+
+KPC_TPM_secreted <- KPC_TPM_secreted[rowSums(KPC_TPM_secreted > 0) == ncol(KPC_TPM_secreted), ]
+```
+
+
+## Add in gene names and make rownames
+
+```{r, include=FALSE}
+gene_symbols <- mapIds(
+    org.Mm.eg.db,
+    keys = rownames(KPC_TPM_secreted),
+    keytype = "ENSEMBL",
+    column = "SYMBOL",
+    multiVals = "first"
+)
+
+KPC_TPM_secreted <- as.data.frame(KPC_TPM_secreted)
+
+KPC_TPM_secreted$gene_symbol <- gene_symbols[rownames(KPC_TPM_secreted)]
+```
+
+
+## Get a list of genes secreted by KPC tumours
+
+```{r, include=FALSE}
+KPC_secreted_genes <- KPC_TPM_secreted$gene_symbol
+```
+
+```{r, inlcude=FALSE}
+write.table(KPC_secreted_genes, 
+            file = "KPC_secreted_genes.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```
+
+
+
+# Get list of matching receptors for secreted genes
+
+```{r, include=FALSE}
+# Load the built-in mouse ligand-receptor database
+CellChatDB <- CellChatDB.mouse
+
+# Subset the interactions table for ligands in your secreted gene list
+lr_KPC <- subset(CellChatDB$interaction, ligand %in% KPC_secreted_genes)
+
+# Extract receptors that line up with secreted genes
+KPC_receptors <- unique(trimws(unlist(strsplit(lr_KPC$receptor.symbol, ","))))
+```
+
+```{r, include=FALSE}
+write.table(KPC_receptors, 
+            file = "KPC_secreted_genes_receptors.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```

@@ -1,0 +1,198 @@
+---
+title: "LLC_tumour_bulk_RNAseq"
+author: "Alex Brown"
+date: "2025-11-11"
+output: html_document
+---
+
+
+
+# Load libraries
+
+```{r, include=FALSE}
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(biomaRt)
+library(CellChat)
+```
+
+
+
+# Read in data
+
+```{r, include=FALSE}
+LLC_tumour_RNAseq <- read.table("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_bulk_RNAseq/GSE80678_LLC_tumour_counts.txt", header = TRUE, stringsAsFactors = FALSE)
+```
+
+
+# Make vector describing the experimental conditions and add to metadata (Sample Table)
+
+```{r, include=FALSE}
+# 1. Prepare counts matrix
+LLC_counts <- LLC_tumour_RNAseq[, c("LLC_1", "LLC_2")]   # extract only the sample columns
+
+# Set rownames to gene IDs
+rownames(LLC_counts) <- LLC_tumour_RNAseq$gene_id
+
+# 2. Define sample metadata
+sample_table <- data.frame(
+  sample_name = colnames(LLC_counts),
+  condition   = factor(rep("LLC", ncol(LLC_counts)))
+)
+```
+
+
+
+# Calculate TPM
+
+```{r, include=FALSE}
+# Make sure counts are numeric
+LLC_counts <- as.matrix(LLC_counts)
+storage.mode(LLC_counts) <- "numeric"
+
+
+
+# 2. Gene lengths (in base pairs)
+# Connect to Ensembl
+ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
+
+# Get gene lengths for your genes
+gene_ids <- LLC_tumour_RNAseq$gene_id
+
+gene_info <- getBM(
+  attributes = c("ensembl_gene_id", "start_position", "end_position"),
+  filters = "ensembl_gene_id",
+  values = gene_ids,
+  mart = ensembl
+)
+
+# Calculate gene lengths in base pairs
+gene_info$length <- gene_info$end_position - gene_info$start_position + 1
+
+# Make a vector of lengths in the same order as your counts matrix
+lengths_kb <- gene_info$length[match(rownames(LLC_counts), gene_info$ensembl_gene_id)] / 1000
+
+LLC_counts <- LLC_counts[!is.na(lengths_kb), ]
+lengths_kb <- lengths_kb[!is.na(lengths_kb)]
+
+
+
+# 3. Compute RPK (Reads Per Kilobase)
+LLC_rpk <- LLC_counts / lengths_kb
+
+
+
+# 4. Compute TPM
+LLC_TPM <- apply(LLC_rpk, 2, function(x) (x / sum(x)) * 1e6)
+
+
+
+# 5. Check results
+head(LLC_TPM)
+colSums(LLC_TPM)  # each column should sum to ~1e6
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(LLC_counts, gene_info, LLC_tumour_RNAseq, LLC_rpk, sample_table, gene_ids, lengths_kb)
+```
+
+
+
+# Get list of genes for "Secreted" proteins from Human Protein Atlas, then map to mouse orthologs
+
+## Filter secreted protein list from HPA
+### NOTE - I downloaded a list of HPA.
+
+```{r, include=FALSE}
+hpa <- read.delim("C:/Users/nwb_l/Documents/r_projects/proteinatlas.tsv", stringsAsFactors = FALSE)
+
+hpa_secreted <- hpa[grepl("Secreted proteins|Predicted secreted proteins", hpa$Protein.class), ]
+
+# Human secreted gene list
+hpa_secreted_genes <- hpa_secreted$Ensembl
+```
+
+
+## Map human genes to mouse orthologs
+### NOTE - I downloaded a file from BioMart that converted human genes to mouse orthologs
+
+```{r, include=FALSE}
+orthologs <- read.table("C:/Users/nwb_l/Documents/r_projects/human_to_mouse_orthologs.txt", header = TRUE, stringsAsFactors = FALSE, sep = "", fill = TRUE)
+
+# Subset for orthology_confidence = 1 (high confidence of gene mapping)
+orthologs <- orthologs[orthologs$orthology_confidence == 1, ]
+
+# Filter orthologs for human secreted proteins
+orthologs_secreted <- orthologs[orthologs$human_gene_id %in% hpa_secreted_genes, ]
+
+# Filter orthologs for mouse genes
+LLC_secreted_ids <- unique(orthologs_secreted$mouse_gene_id)
+```
+
+
+## Filter TPM for secreted genes, then for TPM > 0
+
+```{r, include=FALSE}
+LLC_TPM_secreted <- LLC_TPM[rownames(LLC_TPM) %in% LLC_secreted_ids, ]
+
+LLC_TPM_secreted <- LLC_TPM_secreted[rowSums(LLC_TPM_secreted > 0) == ncol(LLC_TPM_secreted), ]
+```
+
+
+## Add in gene names and make rownames
+
+```{r, include=FALSE}
+gene_symbols <- mapIds(
+    org.Mm.eg.db,
+    keys = rownames(LLC_TPM_secreted),
+    keytype = "ENSEMBL",
+    column = "SYMBOL",
+    multiVals = "first"
+)
+
+LLC_TPM_secreted <- as.data.frame(LLC_TPM_secreted)
+
+LLC_TPM_secreted$gene_symbol <- gene_symbols[rownames(LLC_TPM_secreted)]
+```
+
+
+## Get a list of genes secreted by LLC tumours
+
+```{r, include=FALSE}
+LLC_secreted_genes <- LLC_TPM_secreted$gene_symbol
+```
+
+```{r, inlcude=FALSE}
+write.table(LLC_secreted_genes, 
+            file = "LLC_secreted_genes.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```
+
+
+
+# Get list of matching receptors for secreted genes
+
+```{r, include=FALSE}
+# Load the built-in mouse ligand-receptor database
+CellChatDB <- CellChatDB.mouse
+
+# Subset the interactions table for ligands in your secreted gene list
+lr_LLC <- subset(CellChatDB$interaction, ligand %in% LLC_secreted_genes)
+
+# Extract receptors that line up with secreted genes
+LLC_receptors <- unique(trimws(unlist(strsplit(lr_LLC$receptor.symbol, ","))))
+```
+
+```{r, include=FALSE}
+write.table(LLC_receptors, 
+            file = "LLC_secreted_genes_receptors.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```

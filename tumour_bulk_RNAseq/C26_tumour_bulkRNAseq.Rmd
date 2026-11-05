@@ -1,0 +1,160 @@
+---
+title: "C26_tumour_bulk_RNAseq"
+author: "Alex Brown"
+date: "2025-11-11"
+output: html_document
+---
+
+
+
+# Load libraries
+
+```{r, include=FALSE}
+library(readxl)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(biomaRt)
+library(CellChat)
+```
+
+
+
+# Read in data
+
+```{r, include=FALSE}
+C26_tumour_RNAseq <- read_excel("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/data_tumours/tumours_bulk_RNAseq/GSE253861_C26_norm_count.xlsx")
+```
+
+
+
+# Make vector describing the experimental conditions and add to metadata (Sample Table)
+
+```{r, include=FALSE}
+# 1. Prepare counts matrix
+C26_counts_df <- C26_tumour_RNAseq %>%
+  select(ENSEMBL, C26_1:C26_4) %>%
+  group_by(ENSEMBL) %>%
+  summarise(across(C26_1:C26_4, \(x) mean(x, na.rm = TRUE)))
+
+C26_counts <- as.data.frame(C26_counts_df[, -1])
+rownames(C26_counts) <- C26_counts_df$ENSEMBL
+
+# 2. Define sample metadata
+C26_sample_table <- data.frame(
+  sample_name = colnames(C26_counts),
+  condition   = factor(rep("C26", ncol(C26_counts)))
+)
+```
+
+
+
+# Filter for log2CPM > 1 in all 4 samples
+### NOTE - since these counts are normalized, anything < 0 is actually a count < 1, meaning that it is very lowly expressed.
+
+```{r, include=FALSE}
+C26_counts_filtered <- C26_counts[apply(C26_counts, 1, function(x) all(x > 1)), ]
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(C26_counts, C26_counts_df, C26_sample_table)
+```
+
+
+
+# Get list of genes for "Secreted" proteins from Human Protein Atlas, then map to mouse orthologs
+
+## Filter secreted protein list from HPA
+### NOTE - I downloaded a list of HPA.
+
+```{r, include=FALSE}
+hpa <- read.delim("C:/Users/nwb_l/Documents/r_projects/proteinatlas.tsv", stringsAsFactors = FALSE)
+
+hpa_secreted <- hpa[grepl("Secreted proteins|Predicted secreted proteins", hpa$Protein.class), ]
+
+# Human secreted gene list
+hpa_secreted_genes <- hpa_secreted$Ensembl
+```
+
+
+## Map human genes to mouse orthologs
+### NOTE - I downloaded a file from BioMart that converted human genes to mouse orthologs
+
+```{r, include=FALSE}
+orthologs <- read.table("C:/Users/nwb_l/Documents/r_projects/human_to_mouse_orthologs.txt", header = TRUE, stringsAsFactors = FALSE, sep = "", fill = TRUE)
+
+# Subset for orthology_confidence = 1 (high confidence of gene mapping)
+orthologs <- orthologs[orthologs$orthology_confidence == 1, ]
+
+# Filter orthologs for human secreted proteins
+orthologs_secreted <- orthologs[orthologs$human_gene_id %in% hpa_secreted_genes, ]
+
+# Filter orthologs for mouse genes
+ensembl_secreted <- unique(orthologs_secreted$mouse_gene_id)
+```
+
+
+## Add in gene names and make rownames
+
+```{r, include=FALSE}
+# 1. Keep only expressed + secreted genes
+C26_secreted <- C26_counts_filtered[rownames(C26_counts_filtered) %in% ensembl_secreted, ]
+
+# 2. Map ENSEMBL IDs to gene symbols for readability
+gene_symbols <- mapIds(
+  org.Mm.eg.db,
+  keys = rownames(C26_secreted),
+  keytype = "ENSEMBL",
+  column = "SYMBOL",
+  multiVals = "first"
+)
+
+# 3. Add gene_symbol column
+C26_secreted <- data.frame(
+  gene_symbol = gene_symbols[rownames(C26_secreted)],
+  C26_secreted,
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+```
+
+
+## Get a list of genes secreted by C26 tumours
+
+```{r, include=FALSE}
+C26_secreted_genes <- C26_secreted$gene_symbol
+```
+
+```{r, inlcude=FALSE}
+write.table(C26_secreted_genes, 
+            file = "C26_secreted_genes.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```
+
+
+
+# Get list of matching receptors for secreted genes
+
+```{r, include=FALSE}
+# Load the built-in mouse ligand-receptor database
+CellChatDB <- CellChatDB.mouse
+
+# Subset the interactions table for ligands in your secreted gene list
+lr_C26 <- subset(CellChatDB$interaction, ligand %in% C26_secreted_genes)
+
+# Extract receptors that line up with secreted genes
+C26_receptors <- unique(trimws(unlist(strsplit(lr_C26$receptor.symbol, ","))))
+```
+
+```{r, include=FALSE}
+write.table(C26_receptors, 
+            file = "C26_secreted_genes_receptors.csv", 
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE) 
+```
