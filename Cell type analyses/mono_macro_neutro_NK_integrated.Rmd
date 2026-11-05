@@ -1,0 +1,1637 @@
+---
+title: "monocytes_macrophages_neutrophils_NK_cells_integrated"
+author: "Alex Brown"
+date: "2026-01-27"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(gridExtra)
+library(harmony)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(clusterProfiler)
+library(monocle3)
+library(NMF)
+library(circlize)
+library(ComplexHeatmap)
+library(CellChat)
+library(pheatmap)
+library(nichenetr)
+```
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/muscle_integrated.RData")
+```
+
+
+## Define CTLs and Tumour-bearing
+
+```{r, include=FALSE}
+ctl_samples <- c(
+  "Agca_snLLC_CTL",
+  "Brown_scLLC_CTL",
+  "Kim_scB16F10_CTL",
+  "Pryce_scC26_CTL",
+  "Pryce_scKPP_CTL",
+  "Zhang_snKIC_CTL"
+)
+
+early_tb_samples <- c(
+  "Brown_scLLC_2w",
+  "Brown_scLLC_2.5w"
+)
+
+endpoint_tb_samples <- c(
+  "Agca_snLLC_LLC",
+  "Brown_scLLC_3.5w",
+  "Kim_scB16F10_B16F10",
+  "Pryce_scC26_C26",
+  "Pryce_scKPP_KPP",
+  "Zhang_snKIC_KIC"
+)
+
+
+
+sc_combined$condition <- NA
+
+sc_combined$condition[sc_combined$orig.ident %in% ctl_samples] <- "Control"
+
+sc_combined$condition[sc_combined$orig.ident %in% early_tb_samples] <- "Early tumour-bearing"
+
+sc_combined$condition[sc_combined$orig.ident %in% endpoint_tb_samples] <- "Endpoint tumour-bearing"
+
+rm(ctl_samples, early_tb_samples, endpoint_tb_samples)
+```
+
+
+
+# Subset Monocytes, Macrophages, Neutrophils, NK cells
+
+### NOTE - The reason why we chose these immune cells specifically is because they have the greatest increase in communication within the muscle with cachexia
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+monocytes_integrated <- subset(sc_combined, idents = "Monocytes")
+macrophages_integrated <- subset(sc_combined, idents = "Macrophages")
+neutrophils_integrated <- subset(sc_combined, idents = "Neutrophils")
+nk_cells_integrated <- subset(sc_combined, idents = "NK cells")
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(Agca_snLLC_CTL, Agca_snLLC_LLC, Brown_scLLC_CTL, Brown_scLLC_2w, Brown_scLLC_2.5w, Brown_scLLC_3.5w, Kim_scB16F10_CTL, Kim_scB16F10_B16F10, Pryce_scC26_CTL, Pryce_scC26_C26, Pryce_scKPP_CTL, Pryce_scKPP_KPP, Zhang_snKIC_CTL, Zhang_snKIC_KIC, DEGs_sc_combined, all_genes)
+```
+
+
+
+# Plot UMAP 
+
+## Highlighting cells
+
+```{r}
+Idents(sc_combined) <- "seurat_clusters"
+
+sc_combined$highlight_cells <- "Other"
+
+sc_combined$highlight_cells[sc_combined$seurat_clusters == "Monocytes"] <- "Monocytes"
+sc_combined$highlight_cells[sc_combined$seurat_clusters == "Macrophages"] <- "Macrophages"
+sc_combined$highlight_cells[sc_combined$seurat_clusters == "Neutrophils"] <- "Neutrophils"
+sc_combined$highlight_cells[sc_combined$seurat_clusters == "NK cells"] <- "NK cells"
+
+DimPlot(
+  sc_combined,
+  reduction = "umap",
+  group.by = "highlight_cells",
+  cols = c(
+    "Other" = "grey85",
+    "Monocytes" = "#80E5FF",
+    "Macrophages" = "#1E90FF",
+    "Neutrophils" = "#4169E1",
+    "NK cells" = "#5B0E8A"
+  ),
+  pt.size = 1, raster = FALSE
+) +
+  ggplot2::labs(title = NULL, x = "UMAP1", y = "UMAP2") +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.position = "right"
+  )
+```
+
+```{r}
+rm(sc_combined)
+```
+
+
+## By subcluster
+
+```{r}
+DimPlot(monocytes_integrated, reduction = "umap", group.by = "subcluster", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(macrophages_integrated, reduction = "umap", group.by = "subcluster", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(neutrophils_integrated, reduction = "umap", group.by = "subcluster", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(nk_cells_integrated, reduction = "umap", group.by = "subcluster", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## By condition
+
+```{r}
+DimPlot(monocytes_integrated, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(macrophages_integrated, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(neutrophils_integrated, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(nk_cells_integrated, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+
+# Plot stacked barplot for subcluster proportions
+
+## For each condition
+```{r, include=FALSE}
+monocytes_integrated_cluster_proportions <- monocytes_integrated@meta.data %>%
+  dplyr::select(orig.ident, subcluster) %>%
+  group_by(orig.ident, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(orig.ident) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+macrophages_integrated_cluster_proportions <- macrophages_integrated@meta.data %>%
+  dplyr::select(orig.ident, subcluster) %>%
+  group_by(orig.ident, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(orig.ident) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+neutrophils_integrated_cluster_proportions <- neutrophils_integrated@meta.data %>%
+  dplyr::select(orig.ident, subcluster) %>%
+  group_by(orig.ident, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(orig.ident) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+nk_cells_integrated_cluster_proportions <- nk_cells_integrated@meta.data %>%
+  dplyr::select(orig.ident, subcluster) %>%
+  group_by(orig.ident, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(orig.ident) %>%
+  mutate(percentage = count / sum(count) * 100)
+```
+
+```{r, include=FALSE}
+write.csv(monocytes_integrated_cluster_proportions, file = "macrophages_integrated_cluster_proportions.csv", row.names = TRUE)
+
+write.csv(macrophages_integrated_cluster_proportions, file = "macrophages_integrated_cluster_proportions.csv", row.names = TRUE)
+
+write.csv(neutrophils_integrated_cluster_proportions, file = "macrophages_integrated_cluster_proportions.csv", row.names = TRUE)
+
+write.csv(nk_cells_integrated_cluster_proportions, file = "macrophages_integrated_cluster_proportions.csv", row.names = TRUE)
+```
+
+```{r}
+monocytes_integrated_cluster_proportions$orig.ident <- factor(
+  monocytes_integrated_cluster_proportions$orig.ident,
+  levels = c("Agca_snLLC_CTL", "Agca_snLLC_LLC", "Brown_scLLC_CTL", "Brown_scLLC_2w", "Brown_scLLC_2.5w", "Brown_scLLC_3.5w", "Kim_scB16F10_CTL", "Kim_scB16F10_B16F10", "Pryce_scC26_CTL", "Pryce_scC26_C26", "Pryce_scKPP_CTL", "Pryce_scKPP_KPP", "Zhang_snKIC_CTL", "Zhang_snKIC_KIC"
+), labels = c("Agca CTL", "Agca LLC", "Brown CTL", "Brown LLC (2w)",
+"Brown LLC (2.5w)", "Brown LLC (3.5w)", "Kim CTL", "Kim B16F10",
+"Pryce (C26) CTL", "Pryce C26", "Pryce (KPP) CTL", "Pryce KPP",
+"Zhang CTL", "Zhang KIC"))
+
+macrophages_integrated_cluster_proportions$orig.ident <- factor(
+  macrophages_integrated_cluster_proportions$orig.ident,
+  levels = c("Agca_snLLC_CTL", "Agca_snLLC_LLC", "Brown_scLLC_CTL", "Brown_scLLC_2w", "Brown_scLLC_2.5w", "Brown_scLLC_3.5w", "Kim_scB16F10_CTL", "Kim_scB16F10_B16F10", "Pryce_scC26_CTL", "Pryce_scC26_C26", "Pryce_scKPP_CTL", "Pryce_scKPP_KPP", "Zhang_snKIC_CTL", "Zhang_snKIC_KIC"
+), labels = c("Agca CTL", "Agca LLC", "Brown CTL", "Brown LLC (2w)",
+"Brown LLC (2.5w)", "Brown LLC (3.5w)", "Kim CTL", "Kim B16F10",
+"Pryce (C26) CTL", "Pryce C26", "Pryce (KPP) CTL", "Pryce KPP",
+"Zhang CTL", "Zhang KIC"))
+
+neutrophils_integrated_cluster_proportions$orig.ident <- factor(
+  neutrophils_integrated_cluster_proportions$orig.ident,
+  levels = c("Agca_snLLC_CTL", "Agca_snLLC_LLC", "Brown_scLLC_CTL", "Brown_scLLC_2w", "Brown_scLLC_2.5w", "Brown_scLLC_3.5w", "Kim_scB16F10_CTL", "Kim_scB16F10_B16F10", "Pryce_scC26_CTL", "Pryce_scC26_C26", "Pryce_scKPP_CTL", "Pryce_scKPP_KPP", "Zhang_snKIC_CTL", "Zhang_snKIC_KIC"
+), labels = c("Agca CTL", "Agca LLC", "Brown CTL", "Brown LLC (2w)",
+"Brown LLC (2.5w)", "Brown LLC (3.5w)", "Kim CTL", "Kim B16F10",
+"Pryce (C26) CTL", "Pryce C26", "Pryce (KPP) CTL", "Pryce KPP",
+"Zhang CTL", "Zhang KIC"))
+
+nk_cells_integrated_cluster_proportions$orig.ident <- factor(
+  nk_cells_integrated_cluster_proportions$orig.ident,
+  levels = c("Agca_snLLC_CTL", "Agca_snLLC_LLC", "Brown_scLLC_CTL", "Brown_scLLC_2w", "Brown_scLLC_2.5w", "Brown_scLLC_3.5w", "Kim_scB16F10_CTL", "Kim_scB16F10_B16F10", "Pryce_scC26_CTL", "Pryce_scC26_C26", "Pryce_scKPP_CTL", "Pryce_scKPP_KPP", "Zhang_snKIC_CTL", "Zhang_snKIC_KIC"
+), labels = c("Agca CTL", "Agca LLC", "Brown CTL", "Brown LLC (2w)",
+"Brown LLC (2.5w)", "Brown LLC (3.5w)", "Kim CTL", "Kim B16F10",
+"Pryce (C26) CTL", "Pryce C26", "Pryce (KPP) CTL", "Pryce KPP",
+"Zhang CTL", "Zhang KIC"))
+
+
+
+ggplot(monocytes_integrated_cluster_proportions, aes(x = orig.ident, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+
+ggplot(macrophages_integrated_cluster_proportions, aes(x = orig.ident, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+
+ggplot(neutrophils_integrated_cluster_proportions, aes(x = orig.ident, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+
+ggplot(nk_cells_integrated_cluster_proportions, aes(x = orig.ident, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+```
+
+
+## CTLs and tumour-bearing combined
+
+```{r, include=FALSE}
+ctl_samples <- c(
+  "Agca_snLLC_CTL",
+  "Brown_scLLC_CTL",
+  "Kim_scB16F10_CTL",
+  "Pryce_scC26_CTL",
+  "Pryce_scKPP_CTL",
+  "Zhang_snKIC_CTL"
+)
+
+
+
+monocytes_integrated$condition <- ifelse(
+  monocytes_integrated$orig.ident %in% ctl_samples,
+  "CTL",
+  "Tumour-bearing")
+
+macrophages_integrated$condition <- ifelse(
+  macrophages_integrated$orig.ident %in% ctl_samples,
+  "CTL",
+  "Tumour-bearing")
+
+neutrophils_integrated$condition <- ifelse(
+  neutrophils_integrated$orig.ident %in% ctl_samples,
+  "CTL",
+  "Tumour-bearing")
+
+nk_cells_integrated$condition <- ifelse(
+  nk_cells_integrated$orig.ident %in% ctl_samples,
+  "CTL",
+  "Tumour-bearing")
+
+
+
+rm(ctl_samples)
+```
+
+```{r, include=FALSE}
+monocytes_integrated_cluster_proportions_combined <- monocytes_integrated@meta.data %>%
+  dplyr::select(condition, subcluster) %>%
+  group_by(condition, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(condition) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+macrophages_integrated_cluster_proportions_combined <- macrophages_integrated@meta.data %>%
+  dplyr::select(condition, subcluster) %>%
+  group_by(condition, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(condition) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+neutrophils_integrated_cluster_proportions_combined <- neutrophils_integrated@meta.data %>%
+  dplyr::select(condition, subcluster) %>%
+  group_by(condition, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(condition) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+nk_cells_integrated_cluster_proportions_combined <- nk_cells_integrated@meta.data %>%
+  dplyr::select(condition, subcluster) %>%
+  group_by(condition, subcluster) %>%
+  summarize(count = n()) %>%
+  group_by(condition) %>%
+  mutate(percentage = count / sum(count) * 100)
+```
+
+```{r, include=FALSE}
+write.csv(monocytes_integrated_cluster_proportions_combined, file = "monocytes_integrated_cluster_proportions_combined.csv", row.names = TRUE)
+
+write.csv(macrophages_integrated_cluster_proportions_combined, file = "macrophages_integrated_cluster_proportions_combined.csv", row.names = TRUE)
+
+write.csv(neutrophils_integrated_cluster_proportions_combined, file = "neutrophils_integrated_cluster_proportions_combined.csv", row.names = TRUE)
+
+write.csv(nk_cells_integrated_cluster_proportions_combined, file = "nk_cells_integrated_cluster_proportions_combined.csv", row.names = TRUE)
+```
+
+```{r}
+monocytes_integrated_cluster_proportions_combined$condition <- factor(
+  monocytes_integrated_cluster_proportions_combined$condition,
+  levels = c("CTL", "Tumour-bearing"),
+  labels = c("CTL", "Tumour-bearing"))
+
+macrophages_integrated_cluster_proportions_combined$condition <- factor(
+  macrophages_integrated_cluster_proportions_combined$condition,
+  levels = c("CTL", "Tumour-bearing"),
+  labels = c("CTL", "Tumour-bearing"))
+
+neutrophils_integrated_cluster_proportions_combined$condition <- factor(
+  neutrophils_integrated_cluster_proportions_combined$condition,
+  levels = c("CTL", "Tumour-bearing"),
+  labels = c("CTL", "Tumour-bearing"))
+
+nk_cells_integrated_cluster_proportions_combined$condition <- factor(
+  nk_cells_integrated_cluster_proportions_combined$condition,
+  levels = c("CTL", "Tumour-bearing"),
+  labels = c("CTL", "Tumour-bearing"))
+
+
+
+ggplot(monocytes_integrated_cluster_proportions_combined, aes(x = condition, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+
+ggplot(macrophages_integrated_cluster_proportions_combined, aes(x = condition, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+
+ggplot(neutrophils_integrated_cluster_proportions_combined, aes(x = condition, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+
+ggplot(nk_cells_integrated_cluster_proportions_combined, aes(x = condition, y = percentage, fill = subcluster)) +
+  geom_bar(stat = "identity", width = 0.75, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1), expand = c(0, 0)) +
+  labs(title = "", x = "", y = "Proportion") +
+  theme(legend.position = "right", panel.background = element_blank(), axis.line = element_line(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = guide_legend(title = NULL))
+```
+
+
+## Removed unused objects
+
+```{r, include=FALSE}
+rm(monocytes_integrated_cluster_proportions, macrophages_integrated_cluster_proportions, neutrophils_integrated_cluster_proportions, nk_cells_integrated_cluster_proportions,  monocytes_integrated_cluster_proportions_combined, macrophages_integrated_cluster_proportions_combined, neutrophils_integrated_cluster_proportions_combined, nk_cells_integrated_cluster_proportions_combined)
+```
+
+
+
+# GO terms for tumour-bearing Monocytes, Macrophages, Neutrophils, NK cells
+
+## Get DEGs in tumour-bearing cells
+
+```{r, include=FALSE}
+Idents(monocytes_integrated) <- "orig.ident"
+Idents(macrophages_integrated) <- "orig.ident"
+Idents(neutrophils_integrated) <- "orig.ident"
+Idents(nk_cells_integrated) <- "orig.ident"
+
+DEGs_cachectic_monocytes_integrated <- FindMarkers(monocytes_integrated, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Agca_snLLC_CTL", "Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL", "Zhang_snKIC_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+
+DEGs_cachectic_macrophages_integrated <- FindMarkers(macrophages_integrated, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Agca_snLLC_CTL", "Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL", "Zhang_snKIC_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+
+### NOTE - did not include Zhang_snKIC_CTL because it does not have any neutrophils
+DEGs_cachectic_neutrophils_integrated <- FindMarkers(neutrophils_integrated, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Agca_snLLC_CTL", "Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+
+### NOTE - did not include Agca_snLLC_CTL because it does not have any NK cells
+DEGs_cachectic_nk_cells_integrated <- FindMarkers(nk_cells_integrated, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL", "Zhang_snKIC_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+```
+
+
+## Subset DEG for p_val_adj < 0.05
+
+```{r, include=FALSE}
+DEGs_cachectic_monocytes_integrated <- na.omit(DEGs_cachectic_monocytes_integrated)
+
+DEGs_cachectic_macrophages_integrated <- na.omit(DEGs_cachectic_macrophages_integrated)
+
+DEGs_cachectic_neutrophils_integrated <- na.omit(DEGs_cachectic_neutrophils_integrated)
+
+DEGs_cachectic_nk_cells_integrated <- na.omit(DEGs_cachectic_nk_cells_integrated)
+
+
+
+DEGs_cachectic_monocytes_integrated <- subset(DEGs_cachectic_monocytes_integrated, p_val_adj < 0.05)
+
+DEGs_cachectic_macrophages_integrated <- subset(DEGs_cachectic_macrophages_integrated, p_val_adj < 0.05)
+
+DEGs_cachectic_neutrophils_integrated <- subset(DEGs_cachectic_neutrophils_integrated, p_val_adj < 0.05)
+
+DEGs_cachectic_nk_cells_integrated <- subset(DEGs_cachectic_nk_cells_integrated, p_val_adj < 0.05)
+```
+
+```{r, include=FALSE}
+write.csv(DEGs_cachectic_monocytes_integrated, file = "DEGs_cachectic_monocytes_integrated.csv")
+
+write.csv(DEGs_cachectic_macrophages_integrated, file = "DEGs_cachectic_macrophages_integrated.csv")
+
+write.csv(DEGs_cachectic_neutrophils_integrated, file = "DEGs_cachectic_neutrophils_integrated.csv")
+
+write.csv(DEGs_cachectic_nk_cells_integrated, file = "DEGs_cachectic_nk_cells_integrated.csv")
+```
+
+
+## Take the row names of the specified genes in each condition that have an -2 > avg_log2FC > 0.2
+
+```{r, include=FALSE}
+DEGs_cachectic_monocytes_integrated_up <- rownames(DEGs_cachectic_monocytes_integrated[DEGs_cachectic_monocytes_integrated$avg_log2FC > 0.2,])
+
+DEGs_cachectic_macrophages_integrated_up <- rownames(DEGs_cachectic_macrophages_integrated[DEGs_cachectic_macrophages_integrated$avg_log2FC > 0.2,])
+
+DEGs_cachectic_neutrophils_integrated_up <- rownames(DEGs_cachectic_neutrophils_integrated[DEGs_cachectic_neutrophils_integrated$avg_log2FC > 0.2,])
+
+DEGs_cachectic_nk_cells_integrated_up <- rownames(DEGs_cachectic_nk_cells_integrated[DEGs_cachectic_nk_cells_integrated$avg_log2FC > 0.2,])
+
+
+
+DEGs_cachectic_monocytes_integrated_down <- rownames(DEGs_cachectic_monocytes_integrated[DEGs_cachectic_monocytes_integrated$avg_log2FC < -0.2,])
+
+DEGs_cachectic_macrophages_integrated_down <- rownames(DEGs_cachectic_macrophages_integrated[DEGs_cachectic_macrophages_integrated$avg_log2FC < -0.2,])
+
+DEGs_cachectic_neutrophils_integrated_down <- rownames(DEGs_cachectic_neutrophils_integrated[DEGs_cachectic_neutrophils_integrated$avg_log2FC < -0.2,])
+
+DEGs_cachectic_nk_cells_integrated_down <- rownames(DEGs_cachectic_nk_cells_integrated[DEGs_cachectic_nk_cells_integrated$avg_log2FC < -0.2,])
+```
+
+
+## Run GO analysis
+
+```{r, include=FALSE}
+DEGs_cachectic_monocytes_integrated_upgo <- enrichGO(gene = DEGs_cachectic_monocytes_integrated_up, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_macrophages_integrated_upgo <- enrichGO(gene = DEGs_cachectic_macrophages_integrated_up, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_neutrophils_integrated_upgo <- enrichGO(gene = DEGs_cachectic_neutrophils_integrated_up, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_nk_cells_integrated_upgo <- enrichGO(gene = DEGs_cachectic_nk_cells_integrated_up, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+
+
+DEGs_cachectic_monocytes_integrated_downgo <- enrichGO(gene = DEGs_cachectic_monocytes_integrated_down, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_macrophages_integrated_downgo <- enrichGO(gene = DEGs_cachectic_macrophages_integrated_down, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_neutrophils_integrated_downgo <- enrichGO(gene = DEGs_cachectic_neutrophils_integrated_down, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_nk_cells_integrated_downgo <- enrichGO(gene = DEGs_cachectic_nk_cells_integrated_down, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+```
+
+
+## .csv for GO terms
+
+```{r, include=FALSE}
+write.csv(DEGs_cachectic_monocytes_integrated_upgo, file = "monocytes_integrated_upgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_macrophages_integrated_upgo, file = "macrophages_integrated_upgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_neutrophils_integrated_upgo, file = "neutrophils_integrated_upgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_nk_cells_integrated_upgo, file = "nk_cells_integrated_upgo.csv", row.names = TRUE)
+
+
+
+write.csv(DEGs_cachectic_monocytes_integrated_downgo, file = "monocytes_integrated_downgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_macrophages_integrated_downgo, file = "macrophages_integrated_downgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_neutrophils_integrated_downgo, file = "neutrophils_integrated_downgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_nk_cells_integrated_downgo, file = "nk_cells_integrated_downgo.csv", row.names = TRUE)
+```
+
+
+## Visualize GO terms
+
+### Monocytes Immune/inflammation response UP (manually sampled top 100 terms for those related to immune/inflammation - 89/top 100, only sampling top 20)
+
+```{r}
+immune_mono_up <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+go_immune_mono_up <- DEGs_cachectic_monocytes_integrated_upgo[immune_mono_up, ]
+
+go_immune_mono_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_immune_mono_up$Description)
+
+ggplot(go_immune_mono_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Monocytes - Immune-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Monocytes neural cell regulation UP (manually sampled top 100 terms for those related to neural cells - 4/top 100)
+
+#### NOTE - Macrophages have some of these terms too, just less abundant in top 100
+
+```{r}
+neural_mono_up <- c(71, 85, 89, 97)
+go_neural_mono_up <- DEGs_cachectic_monocytes_integrated_upgo[neural_mono_up, ]
+
+go_neural_mono_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_neural_mono_up$Description)
+
+ggplot(go_neural_mono_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Monocytes - Neural-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Monocytes neural cell regulation DOWN
+
+```{r}
+neural_mono_down <- c(2, 3, 4)
+go_neural_mono_down <- DEGs_cachectic_monocytes_integrated_downgo[neural_mono_down, ]
+
+go_neural_mono_down$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_neural_mono_down$Description)
+
+ggplot(go_neural_mono_down, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "DOWN GO Integrated Monocytes - Neural-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Macrophages Immune/inflammation UP (manually sampled top 100 terms for those related to immune/inflammation - 45/top 100, only sampling in top 50)
+
+```{r}
+immune_macro_up <- c(1, 2, 3, 4, 5, 6, 10, 12, 13, 17, 18, 19, 21, 23, 24, 27, 28, 30, 32, 33, 34, 36, 37, 40, 42, 49)
+go_immune_macro_up <- DEGs_cachectic_macrophages_integrated_upgo[immune_macro_up, ]
+
+go_immune_macro_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_immune_macro_up$Description)
+
+ggplot(go_immune_macro_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Macrophages - Immune-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Macrophages Catabolism UP (manually sampled top 100 terms for those related to catabolism - 28/top 100)
+
+```{r}
+catabolism_up <- c(7, 8, 11, 12, 16, 20, 25, 26, 29, 39, 43, 47, 48, 50, 51, 52, 60, 63, 64, 71, 74, 77, 78, 79, 81, 82, 92, 100)
+go_catabolism_up <- DEGs_cachectic_macrophages_integrated_upgo[catabolism_up, ]
+
+go_catabolism_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_catabolism_up$Description)
+
+ggplot(go_catabolism_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Macrophages - Catabolism-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Neutrophils Immune/inflammation UP (manually sampled top 100 terms for those related to immune/inflammation - 67/top 100, only sampling in top 50)
+
+```{r}
+immune_neutro_up <- c(1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 45, 46, 47, 49, 50)
+go_immune_neutro_up <- DEGs_cachectic_neutrophils_integrated_upgo[immune_neutro_up, ]
+
+go_immune_neutro_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_immune_neutro_up$Description)
+
+ggplot(go_immune_neutro_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Neutrophils - Immune-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Neutrophils Catabolism UP (manually sampled top 100 terms for those related to catabolism - 7/top 100)
+
+```{r}
+catabolism_neutro_up <- c(14, 52, 53, 65, 89, 92, 95)
+go_catabolism_neutro_up <- DEGs_cachectic_neutrophils_integrated_upgo[catabolism_neutro_up, ]
+
+go_catabolism_neutro_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_catabolism_neutro_up$Description)
+
+ggplot(go_catabolism_neutro_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Neutrophils - Catabolism-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### NK cells Immune/inflammation response UP (manually sampled top 100 terms for those related to immune/inflammation - 95/top 100, only sampling top 20)
+
+#### NOTE - A lot of T cell terms here, more NK as you go further through the list of upregulated GO terms.
+
+```{r}
+immune_nk_up <- c(1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20)
+go_immune_nk_up <- DEGs_cachectic_nk_cells_integrated_upgo[immune_nk_up, ]
+
+go_immune_nk_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_immune_nk_up$Description)
+
+ggplot(go_immune_nk_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated NK cells - Immune-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### NOTE - ALMOST ALL OF THE DOWNREGULATED GO TERMS IN MONOCYTES, MACROPHAGES, NEUTROPHILS, AND NK CELLS ARE RELATED TO PROTEIN TRANSLATION AND RIBOSOME FUNCTION.
+
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(DEGs_cachectic_monocytes_integrated, DEGs_cachectic_monocytes_integrated_down, DEGs_cachectic_monocytes_integrated_downgo, DEGs_cachectic_monocytes_integrated_up, DEGs_cachectic_monocytes_integrated_upgo, DEGs_cachectic_macrophages_integrated, DEGs_cachectic_macrophages_integrated_down, DEGs_cachectic_macrophages_integrated_downgo,  DEGs_cachectic_macrophages_integrated_up, DEGs_cachectic_macrophages_integrated_upgo, DEGs_cachectic_neutrophils_integrated, DEGs_cachectic_neutrophils_integrated_down, DEGs_cachectic_neutrophils_integrated_downgo, DEGs_cachectic_neutrophils_integrated_up, DEGs_cachectic_neutrophils_integrated_upgo,
+DEGs_cachectic_nk_cells_integrated, DEGs_cachectic_nk_cells_integrated_down, DEGs_cachectic_nk_cells_integrated_downgo, DEGs_cachectic_nk_cells_integrated_up, DEGs_cachectic_nk_cells_integrated_upgo, go_catabolism_up, catabolism_up, go_immune_mono_up, immune_mono_up, go_immune_macro_up, immune_macro_up, go_immune_neutro_up, immune_neutro_up, go_immune_nk_up, immune_nk_up, go_neural_mono_up, neural_mono_up, go_neural_mono_down, neural_mono_down, go_catabolism_neutro_up, catabolism_neutro_up)
+```
+
+
+
+# Confirm TGFb1 signaling in Monocyte, Macrophages, NK cells by looking at expression of downstream signaling
+
+## Find markers 
+
+```{r}
+# From msigdbr HALLMARK_TGF_BETA_SIGNALING
+tgfb1_gene_list <- c("Nog", "Cdkn1c", "Fnta", "Skil", "Xiap", "Ifngr2", "Hdac1", "Slc20a1", "Smad1", "Bmpr2", "Rhoa", "Smad7", "Klf10", "Tgif1", "Smad3", "Hipk2", "Cdk9", "Smad6", "Ncor2", "Bmpr1a", "Map3k7", "Bcar3", "Ube2d3", "Rab31", "Wwtr1", "Smurf1", "Ppp1r15a", "Pmepa1", "Trim33", "Arid4b", "Acvr1", "Apc", "Bmp2", "Ctnnb1", "Cdh1", "Eng", "Fkbp1a", "Id1", "Id2", "Id3", "Junb", "Furin", "Serpine1", "Ski", "Sptbn1", "Tgfb1", "Tgfbr1", "Thbs1", "Tjp1", "Ltbp2", "Ppm1a")
+
+# FindMarkers
+Idents(monocytes_integrated) <- "condition"
+Idents(macrophages_integrated) <- "condition"
+
+tgfb1_early_genes_mono <- FindMarkers(
+  monocytes_integrated,
+  ident.1 = "Early tumour-bearing",
+  ident.2 = "Control",
+  features = tgfb1_gene_list,
+  min.pct = 0
+)
+
+tgfb1_early_genes_macro <- FindMarkers(
+  macrophages_integrated,
+  ident.1 = "Early tumour-bearing",
+  ident.2 = "Control",
+  features = tgfb1_gene_list,
+  min.pct = 0
+)
+
+tgfb1_end_genes_mono <- FindMarkers(
+  monocytes_integrated,
+  ident.1 = "Endpoint tumour-bearing",
+  ident.2 = "Control",
+  features = tgfb1_gene_list,
+  min.pct = 0
+)
+
+tgfb1_end_genes_macro <- FindMarkers(
+  macrophages_integrated,
+  ident.1 = "Endpoint tumour-bearing",
+  ident.2 = "Control",
+  features = tgfb1_gene_list,
+  min.pct = 0
+)
+
+# Merge with gene list and keep gene column
+tgfb1_early_genes_mono <- tgfb1_gene_list %>%
+  as.data.frame() %>%
+  setNames("gene") %>%
+  left_join(
+    tgfb1_early_genes_mono %>% rownames_to_column("gene"),
+    by = "gene"
+  ) %>%
+  # Replace NAs with 0
+  mutate(across(c(avg_log2FC, p_val, p_val_adj), ~replace_na(., 0)))
+
+tgfb1_early_genes_macro <- tgfb1_gene_list %>%
+  as.data.frame() %>%
+  setNames("gene") %>%
+  left_join(
+    tgfb1_early_genes_macro %>% rownames_to_column("gene"),
+    by = "gene"
+  ) %>%
+  # Replace NAs with 0
+  mutate(across(c(avg_log2FC, p_val, p_val_adj), ~replace_na(., 0)))
+
+
+
+tgfb1_end_genes_mono <- tgfb1_gene_list %>%
+  as.data.frame() %>%
+  setNames("gene") %>%
+  left_join(
+    tgfb1_end_genes_mono %>% rownames_to_column("gene"),
+    by = "gene"
+  ) %>%
+  mutate(across(c(avg_log2FC, p_val, p_val_adj), ~replace_na(., 0)))
+
+tgfb1_end_genes_macro <- tgfb1_gene_list %>%
+  as.data.frame() %>%
+  setNames("gene") %>%
+  left_join(
+    tgfb1_end_genes_macro %>% rownames_to_column("gene"),
+    by = "gene"
+  ) %>%
+  mutate(across(c(avg_log2FC, p_val, p_val_adj), ~replace_na(., 0)))
+
+tgfb1_early_genes_mono
+tgfb1_early_genes_macro
+
+tgfb1_end_genes_mono
+tgfb1_end_genes_macro
+```
+
+
+## Plot 
+
+```{r}
+# Prepare data
+tgfb1_early_genes_mono <- tgfb1_early_genes_mono %>%
+  mutate(
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+tgfb1_early_genes_macro <- tgfb1_early_genes_macro %>%
+  mutate(
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+tgfb1_end_genes_mono <- tgfb1_end_genes_mono %>%
+  mutate(
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+tgfb1_end_genes_macro <- tgfb1_end_genes_macro %>%
+  mutate(
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+
+# Plot Early - Monocytes
+ggplot(tgfb1_early_genes_mono, aes(x = gene, y = avg_log2FC_plot, fill = p_fill)) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    na.value = "black",
+    limits = c(1e-40, 0.05),
+    oob = scales::squish,
+    trans = scales::log10_trans(),
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 1)) +
+  labs(
+    title = "TGFb1 signaling (Early tumour-bearing Monocytes)",
+    x = "",
+    y = "avg_log2FC (significant genes only)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+
+
+# Plot Early - Macrophages
+ggplot(tgfb1_early_genes_macro, aes(x = gene, y = avg_log2FC_plot, fill = p_fill)) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    na.value = "black",
+    limits = c(1e-40, 0.05),
+    oob = scales::squish,
+    trans = scales::log10_trans(),
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 1)) +
+  labs(
+    title = "TGFb1 signaling (Early tumour-bearing Macrophages)",
+    x = "",
+    y = "avg_log2FC (significant genes only)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+
+
+# Plot Endpoint - Monocytes
+ggplot(tgfb1_end_genes_mono, aes(x = gene, y = avg_log2FC_plot, fill = p_fill)) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    na.value = "black",
+    limits = c(1e-40, 0.05),
+    oob = scales::squish,
+    trans = scales::log10_trans(),
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 1)) +
+  labs(
+    title = "TGFb1 signaling (Endpoint tumour-bearing Monocytes)",
+    x = "",
+    y = "avg_log2FC (significant genes only)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+
+
+# Plot Endpoint - Macrophages
+ggplot(tgfb1_end_genes_macro, aes(x = gene, y = avg_log2FC_plot, fill = p_fill)) +
+  geom_col(color = "black") +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    na.value = "black",
+    limits = c(1e-40, 0.05),
+    oob = scales::squish,
+    trans = scales::log10_trans(),
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 1)) +
+  labs(
+    title = "TGFb1 signaling (Endpoint tumour-bearing Macrophages)",
+    x = "",
+    y = "avg_log2FC (significant genes only)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+
+## Plot as combined early and combined late plots
+
+```{r}
+# Prepare data
+tgfb1_early_genes_mono <- tgfb1_early_genes_mono %>%
+  mutate(
+    cell_type = "Monocytes",
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+tgfb1_early_genes_macro <- tgfb1_early_genes_macro %>%
+  mutate(
+    cell_type = "Macrophages",
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+tgfb1_end_genes_mono <- tgfb1_end_genes_mono %>%
+  mutate(
+    cell_type = "Monocytes",
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+tgfb1_end_genes_macro <- tgfb1_end_genes_macro %>%
+  mutate(
+    cell_type = "Macrophages",
+    avg_log2FC_plot = ifelse(p_val_adj > 0.05, 0, avg_log2FC),
+    p_fill = ifelse(p_val_adj > 0.05, NA, p_val_adj)
+  )
+
+
+# Combine Early data
+tgfb1_early_combined <- bind_rows(
+  tgfb1_early_genes_mono,
+  tgfb1_early_genes_macro
+) %>%
+  mutate(
+    cell_type = factor(cell_type, levels = c("Monocytes", "Macrophages"))
+  )
+
+
+# Combine Endpoint data
+tgfb1_end_combined <- bind_rows(
+  tgfb1_end_genes_mono,
+  tgfb1_end_genes_macro
+) %>%
+  mutate(
+    cell_type = factor(cell_type, levels = c("Monocytes", "Macrophages"))
+  )
+
+
+# Plot Early
+ggplot(
+  tgfb1_early_combined,
+  aes(
+    x = gene,
+    y = avg_log2FC_plot,
+    fill = p_fill,
+    colour = cell_type,
+    group = cell_type
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    linewidth = 0.8
+  ) +
+  scale_colour_manual(
+    values = c(
+      "Monocytes" = "#80E5FF",
+      "Macrophages" = "#1E90FF"
+    )
+  ) +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    na.value = "black",
+    limits = c(1e-40, 0.05),
+    oob = scales::squish,
+    trans = scales::log10_trans(),
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 1)) +
+  labs(
+    title = "TGFb1 signaling (Early tumour-bearing)",
+    x = "",
+    y = "avg_log2FC (significant genes only)",
+    colour = "Cell type"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+
+
+# Plot Endpoint
+ggplot(
+  tgfb1_end_combined,
+  aes(
+    x = gene,
+    y = avg_log2FC_plot,
+    fill = p_fill,
+    colour = cell_type,
+    group = cell_type
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    linewidth = 0.8
+  ) +
+  scale_colour_manual(
+    values = c(
+      "Monocytes" = "#80E5FF",
+      "Macrophages" = "#1E90FF"
+    )
+  ) +
+  scale_fill_gradient(
+    low = "blue",
+    high = "red",
+    na.value = "black",
+    limits = c(1e-40, 0.05),
+    oob = scales::squish,
+    trans = scales::log10_trans(),
+    name = "Adjusted p-value"
+  ) +
+  coord_cartesian(ylim = c(-3, 1)) +
+  labs(
+    title = "TGFb1 signaling (Endpoint tumour-bearing)",
+    x = "",
+    y = "avg_log2FC (significant genes only)",
+    colour = "Cell type"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+```
+
+
+
+# -----------------------------------------------------------------------------
+# Load integrated muscle CellChat ---------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat_integrated.RData")
+
+cluster_colours <- c(
+    "Muscle Satellite cells"                = "#FF7FBF",
+    "Muscle Myoblasts"                      = "#FF3F80",
+    "Muscle Myonuclei"                      = "#E00000",
+    "Muscle Endothelial cells"              = "#FFFF00",
+    "Muscle vSMCs"                          = "#BC9D00",
+    "Muscle Pericytes"                      = "#8B5A2B",
+    "Muscle FAPs"                           = "#7CFC00",
+    "Muscle Tenocytes"                      = "#228B22",
+    "Muscle Platelets"                      = "#D46A6A", 
+    "Muscle Mast cells"                     = "#C85C8C", 
+    "Muscle Dendritic cells"                = "#B84D9E", 
+    "Muscle Monocytes"                      = "#80E5FF",
+    "Muscle Macrophages"                    = "#1E90FF",
+    "Muscle Neutrophils"                    = "#4169E1",
+    "Muscle B cells"                        = "#C9A2FF",
+    "Muscle T cells"                        = "#B44CFF",
+    "Muscle NK cells"                       = "#5B0E8A",
+    "Muscle Neural/glial cells"             = "#FF7F00",
+    "Muscle Schwann cells"                  = "#FFA64D",
+    "Tumour Malignant cells"                = "#C0C0C0",
+    "Tumour Endothelial cells"              = "#FFFF00",
+    "Tumour Cancer-associated fibroblasts"  = "#7CFC00",
+    "Tumour Monocytes/macrophages"          = "#99CBFF",
+    "Tumour Neutrophils"                    = "#4169E1",
+    "Tumour B cells"                        = "#C9A2FF",
+    "Tumour T cells"                        = "#B44CFF",
+    "Tumour NK cells"                       = "#5B0E8A"
+)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(cellchat_ctl_ecm, cellchat_ctl_ccc, cellchat_ctl_nps, cellchat_tb_ecm, cellchat_tb_ccc, cellchat_tb_nps)
+```
+
+
+
+# Heatmap to show tumour communication to monocytes, macrophages, neutrophils, NK cells
+
+```{r}
+tumour_to_immune_counts_mat <- cellchat_tb_secreted@net$count[
+  c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells"),
+  c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells")]
+
+pheatmap(
+  tumour_to_immune_counts_mat,
+  color = colorRampPalette(c("white", "red"))(35),
+  breaks = seq(0, 35, length.out = 36),
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  fontsize = 8,
+  angle_col = 45,
+  cellwidth = 10,
+  cellheight = 10
+  )
+```
+
+
+
+# Heatmap of change in monocytes, macrophages, neutrophils, NK cells communication within the muscle
+
+```{r}
+ctl_muscle_immune_counts_mat <- cellchat_ctl_all@net$count[
+  c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"),
+  c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")]
+
+tb_muscle_immune_counts_mat <- cellchat_tb_all@net$count[
+  c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"),
+  c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")]
+
+diff_counts_mat <- tb_muscle_immune_counts_mat - ctl_muscle_immune_counts_mat
+
+n_neg <- 40   # -40 → 0
+n_pos <- 40   # 0 → 40
+
+# Create two color gradients
+neg_colours <- colorRampPalette(c("blue", "white"))(n_neg)
+pos_colours <- colorRampPalette(c("white", "red"))(n_pos)
+colours <- c(neg_colours, pos_colours)
+
+# Define breaks to match colors
+breaks <- seq(-40, 40, length.out = length(colours) + 1)
+
+# Plot
+pheatmap(
+  diff_counts_mat,
+  color = colours,
+  breaks = breaks,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  fontsize = 8,
+  angle_col = 45,
+  cellwidth = 10,
+  cellheight = 10
+)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(ctl_muscle_immune_counts_mat, tb_muscle_immune_counts_mat, tumour_to_immune_counts_mat, diff_counts_mat, breaks, colours, n_neg, n_pos, neg_colours, pos_colours)
+```
+
+
+
+# Enriched signaling pathways from Tumour to muscle monocytes, macrophages, neutrophils, NK cells
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_tb_secreted <- subsetCommunication(cellchat_tb_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_tb_secreted <- netP_tb_secreted[
+  netP_tb_secreted$source %in% c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells") & 
+  netP_tb_secreted$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_tb_secreted$pathway_name)
+```
+
+
+## Check to see which pathways are common between tumour models (from tumour to muscle monocytes, macrophages, neutrophils, NK cells)
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat_split.RData")
+
+rm(cellchat_B16_ctl_meta, cellchat_B16_end_meta, cellchat_C26_ctl_meta, cellchat_C26_end_meta, cellchat_LLC_ctl_meta, cellchat_LLC_end_meta, cellchat_KPP_KIC_ctl_meta, cellchat_KPP_KIC_end_meta, cellchat_B16_ctl_ecm, cellchat_B16_ctl_ccc, cellchat_B16_ctl_nps, cellchat_C26_ctl_ecm, cellchat_C26_ctl_ccc, cellchat_C26_ctl_nps, cellchat_LLC_ctl_ecm, cellchat_LLC_ctl_ccc, cellchat_LLC_ctl_nps, cellchat_KPP_KIC_ctl_ecm, cellchat_KPP_KIC_ctl_ccc, cellchat_KPP_KIC_ctl_nps, cellchat_B16_end_ecm, cellchat_B16_end_ccc, cellchat_B16_end_nps, cellchat_C26_end_ecm, cellchat_C26_end_ccc, cellchat_C26_end_nps, cellchat_LLC_end_ecm, cellchat_LLC_end_ccc, cellchat_LLC_end_nps, cellchat_KPP_KIC_end_ecm, cellchat_KPP_KIC_end_ccc, cellchat_KPP_KIC_end_nps)
+```
+
+### B16
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_B16_end_secreted <- subsetCommunication(cellchat_B16_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_B16_end_secreted <- netP_B16_end_secreted[
+  netP_B16_end_secreted$source %in% c("Tumour ECs/CAFs", "Tumour Monocytes/macrophages", "Tumour Malignant cells") & 
+  netP_B16_end_secreted$target %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_B16_end_secreted$pathway_name)
+```
+
+### C26
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_C26_end_secreted <- subsetCommunication(cellchat_C26_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_C26_end_secreted <- netP_C26_end_secreted[
+  netP_C26_end_secreted$source %in% c("Tumour CAFs", "Tumour Monocytes", "Tumour Macrophages", "Tumour Neutrophils", "Tumour T cells", "Tumour NK cells") & 
+  netP_C26_end_secreted$target %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_C26_end_secreted$pathway_name)
+```
+
+### LLC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_LLC_end_secreted <- subsetCommunication(cellchat_LLC_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_LLC_end_secreted <- netP_LLC_end_secreted[
+  netP_LLC_end_secreted$source %in% c("Tumour Malignant cells", "Tumour EC/CAFs", "Tumour Dendritic cells", "Tumour Monocytes", "Tumour Macrophages", "Tumour Neutrophils", "Tumour T cells/NK cels") & 
+  netP_LLC_end_secreted$target %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_LLC_end_secreted$pathway_name)
+```
+
+### KPP_KIC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_KPP_KIC_end_secreted <- subsetCommunication(cellchat_KPP_KIC_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_KPP_KIC_end_secreted <- netP_KPP_KIC_end_secreted[
+  netP_KPP_KIC_end_secreted$source %in% c("Tumour Malignant cells", "Tumour CAFs", "Tumour Endothelial cells", "Tumour Monocytes", "Tumour Macrophages") & 
+  netP_KPP_KIC_end_secreted$target %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_KPP_KIC_end_secreted$pathway_name)
+```
+
+### NOTE - "CCL", "GALECTIN", "MIF", "SPP1", "CXCL", "TNF", "VISFATIN" up in all 4 tumour models (all of which are up in the combined conditions). OSM also up in B16, LLC, KPC models. Focus on these pathways going forward.
+
+
+## Dotplot of enriched signaling from tumour to muscle
+
+```{r}
+netAnalysis_dot(cellchat_tb_secreted, pattern = "outgoing", pathway.show = c("CCL", "GALECTIN", "MIF", "SPP1", "TNF", "VISFATIN", "CXCL", "OSM"), group.show = c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells"), color.use = cluster_colours)
+```
+
+```{r}
+netAnalysis_dot(cellchat_tb_secreted, pattern = "incoming", pathway.show = c("CCL", "GALECTIN", "MIF", "SPP1", "TNF", "VISFATIN", "CXCL", "OSM"), group.show = c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), color.use = cluster_colours)
+```
+
+
+
+# Enriched signaling pathways from Monocytes, Macrophages, Neutrophils, NK cells to muscle immune cells
+
+## CTLs 
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_ctl_all <- subsetCommunication(cellchat_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_ctl_all <- netP_ctl_all[
+  netP_ctl_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_ctl_all$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_ctl_all$pathway_name)
+```
+
+
+## End
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_tb_all <- subsetCommunication(cellchat_tb_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_tb_all <- netP_tb_all[
+  netP_tb_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_tb_all$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_tb_all$pathway_name)
+```
+
+### NOTE - "GALECTIN", "CD39", "GAS", "ICAM", "LAIR1", "PROS", "TGFb", "TNF", "VISFATIN", "KIT", "CXCL", "ANNEXIN", "LXA4", "SIRP", "THBS", "COMPLEMENT", "IFN-II", "FASLG", "LAMININ", "NKG2D" are enriched signals from tumour-bearing monocytes/macrophages/neutrophils/NK cells but not control
+
+
+## Check to see which pathways are common between tumour models (from muscle monocytes, macrophages, neutrophils, NK cells to all muscle cells)
+
+### B16
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_B16_end_all <- subsetCommunication(cellchat_B16_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_B16_end_all <- netP_B16_end_all[
+  netP_B16_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_B16_end_all$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_B16_end_all$pathway_name)
+```
+
+### C26
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_C26_end_all <- subsetCommunication(cellchat_C26_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_C26_end_all <- netP_C26_end_all[
+  netP_C26_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_C26_end_all$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_C26_end_all$pathway_name)
+```
+
+### LLC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_LLC_end_all <- subsetCommunication(cellchat_LLC_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_LLC_end_all <- netP_LLC_end_all[
+  netP_LLC_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_LLC_end_all$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_LLC_end_all$pathway_name)
+```
+
+### KPP_KIC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_KPP_KIC_end_all <- subsetCommunication(cellchat_KPP_KIC_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_KPP_KIC_end_all <- netP_KPP_KIC_end_all[
+  netP_KPP_KIC_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_KPP_KIC_end_all$target %in% c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_KPP_KIC_end_all$pathway_name)
+```
+
+### NOTE - "ADGRE", "APP", "CD45", "COMPLEMENT", "FN1", "GALECTIN", "MIF", "SELPLG", "TGFb", "Prostaglandin", "ApoE", "GAS", "PROS", "VISFATIN", "BST2", "CCL", "CypA", "ICAM", "IGF", "SEMA4", "CD39", "CD86", "CXCL", "Cholesterol", "ANNEXIN", "THBS", "SELL" are up in all 4 tumour conditions AND the combined conditions. "COMPLEMENT", "GALECTIN", "TGFb", "GAS", "PROS", "VISFATIN", "ICAM", "CD39", "CXCL", "ANNEXIN", "THBS" are up in all 4 conditions but NOT CTL. NONE are in B16, LLC, KPC that are not in C26 too.
+
+
+## Dotplot of enriched signaling from muscle monocytes, macrophages, neutrophils, NK cells to all muscle cells
+
+```{r}
+netAnalysis_dot(cellchat_tb_all, pattern = "outgoing", pathway.show = c("COMPLEMENT", "GALECTIN", "TGFb", "GAS", "PROS", "VISFATIN", "ICAM", "CD39", "CXCL", "ANNEXIN", "THBS"), group.show = c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells"), color.use = cluster_colours)
+```
+
+```{r}
+netAnalysis_dot(cellchat_ctl_all, pattern = "incoming", pathway.show = c("COMPLEMENT", "GALECTIN", "TGFb", "GAS", "PROS", "VISFATIN", "ICAM", "CD39", "CXCL", "ANNEXIN", "THBS"), group.show = c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), color.use = cluster_colours)
+
+netAnalysis_dot(cellchat_tb_all, pattern = "incoming", pathway.show = c("COMPLEMENT", "GALECTIN", "TGFb", "GAS", "PROS", "VISFATIN", "ICAM", "CD39", "CXCL", "ANNEXIN", "THBS"), group.show = c("Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells"), color.use = cluster_colours)
+```
+
+
+
+# Enriched signaling pathways from Monocytes, Macrophages, Neutrophils, NK cells to muscle non-immune cells
+
+## CTLs 
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_ctl_all <- subsetCommunication(cellchat_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_ctl_all <- netP_ctl_all[
+  netP_ctl_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_ctl_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_ctl_all$pathway_name)
+```
+
+
+## End
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_tb_all <- subsetCommunication(cellchat_tb_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_tb_all <- netP_tb_all[
+  netP_tb_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_tb_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_tb_all$pathway_name)
+```
+
+### NOTE - "GALECTIN", "TNF", "PDGF", "SIRP", "THBS", "FASLG", "LAMININ" are enriched signals from tumour-bearing monocytes/macrophages/neutrophils/NK cells but not control
+
+
+## Check to see which pathways are common between tumour models (from muscle monocytes, macrophages, neutrophils, NK cells to all muscle cells)
+
+### B16
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_B16_end_all <- subsetCommunication(cellchat_B16_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_B16_end_all <- netP_B16_end_all[
+  netP_B16_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_B16_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_B16_end_all$pathway_name)
+```
+
+### C26
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_C26_end_all <- subsetCommunication(cellchat_C26_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_C26_end_all <- netP_C26_end_all[
+  netP_C26_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_C26_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_C26_end_all$pathway_name)
+```
+
+### LLC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_LLC_end_all <- subsetCommunication(cellchat_LLC_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_LLC_end_all <- netP_LLC_end_all[
+  netP_LLC_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_LLC_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_LLC_end_all$pathway_name)
+```
+
+### KPP_KIC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_KPP_KIC_end_all <- subsetCommunication(cellchat_KPP_KIC_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_KPP_KIC_end_all <- netP_KPP_KIC_end_all[
+  netP_KPP_KIC_end_all$source %in% c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells") & 
+  netP_KPP_KIC_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_KPP_KIC_end_all$pathway_name)
+```
+
+### NOTE - "CypA", "GAS", "PROS", "TGFb", "Testosterone", "FN1", "MIF", "THBS" are up in all 4 tumour conditions AND the combined conditions. "IGF", "SEMA4", "GALECTIN", "GRN", "Cholesterol", "ADGRG", "OSM" are up in B16, LLC, KPC conditions only. "THBS", "GALECTIN", "ADGRG", "OSM" are up in all 4 conditions plus B16, LLC, KPC tumour-bearing but NOT CTL.
+
+
+## Dotplot of enriched signaling from muscle monocytes, macrophages, neutrophils, NK cells to all muscle cells
+
+```{r}
+netAnalysis_dot(cellchat_tb_all, pattern = "outgoing", pathway.show = c("THBS", "GALECTIN", "ADGRG", "OSM"), group.show = c("Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle NK cells"), color.use = cluster_colours)
+```
+
+```{r}
+netAnalysis_dot(cellchat_ctl_all, pattern = "incoming", pathway.show = c("THBS", "GALECTIN", "ADGRG", "OSM"), group.show = c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"), color.use = cluster_colours)
+
+netAnalysis_dot(cellchat_tb_all, pattern = "incoming", pathway.show = c("THBS", "GALECTIN", "ADGRG", "OSM"), group.show = c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Neural/glial cells", "Muscle Schwann cells"), color.use = cluster_colours)
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(cellchat_ctl_all, cellchat_ctl_secreted, cellchat_tb_all, cellchat_tb_secreted, cellchat_B16_ctl_all, cellchat_B16_ctl_secreted, cellchat_B16_end_all, cellchat_B16_end_secreted, cellchat_C26_ctl_all, cellchat_C26_ctl_secreted, cellchat_C26_end_all, cellchat_C26_end_secreted, cellchat_LLC_ctl_all, cellchat_LLC_ctl_secreted, cellchat_LLC_end_all, cellchat_LLC_end_secreted, cellchat_KPP_KIC_ctl_all, cellchat_KPP_KIC_ctl_secreted, cellchat_KPP_KIC_end_all, cellchat_KPP_KIC_end_secreted, B16_ctl_cluster_colours, B16_end_cluster_colours, C26_ctl_cluster_colours, C26_end_cluster_colours, LLC_ctl_cluster_colours, LLC_end_cluster_colours, KPP_KIC_ctl_cluster_colours, KPP_KIC_end_cluster_colours, netP_B16_end_secreted, netP_C26_end_secreted, netP_LLC_end_secreted, netP_KPP_KIC_end_secreted, netP_ctl_all, netP_tb_all)
+```
+
+
+
+# Relative information flow of enriched macrophage signaling pathways
+
+## Load integrated muscle data (muscle+tumours won't work)
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat/integrated_cellchat_muscle.RData")
+
+rm(cellchat_ctl_all_Agca, cellchat_ctl_all_B16F10, cellchat_ctl_all_LLC, cellchat_end_secreted, cellchat_end_ecm, cellchat_end_nps, cellchat_end_ccc)
+```
+
+## Merge cellchat objects
+
+```{r, include=FALSE}
+object.list <- list("CTL" = cellchat_ctl_all, "Tumour-bearing" = cellchat_end_all)
+
+names(object.list)
+
+cellchat_merged_all <- mergeCellChat(object.list, add.names = names(object.list))
+```
+
+
+## Information flow of enriched pathways
+
+### NOTE - Pathways highlighted BLUE are significantly higher in CTL, RED in TUMOUR-BEARING, BLACK are equal.
+
+```{r}
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = "Monocytes", color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = "Macrophages", color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = "Neutrophils", color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = "NK cells", color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = c("Monocytes", "Macrophages",
+    "Neutrophils", "NK cells"), color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+```

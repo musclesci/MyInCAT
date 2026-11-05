@@ -1,0 +1,1087 @@
+---
+title: "neural_glial_schwann_integrated"
+author: "Alex Brown"
+date: "2026-02-18"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(gridExtra)
+library(harmony)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(clusterProfiler)
+library(monocle3)
+library(NMF)
+library(circlize)
+library(ComplexHeatmap)
+library(CellChat)
+library(pheatmap)
+library(nichenetr)
+library(UCell)
+```
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/muscle_integrated.RData")
+```
+
+
+
+# Subset Neural/glial and Schwann cells
+
+### NOTE - The reason why we chose these immune cells specifically is because they have the greatest increase in communication within the muscle with cachexia
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+ng_integrated <- subset(sc_combined, idents = "Neural/glial cells")
+schwann_integrated <- subset(sc_combined, idents = "Schwann cells")
+ng_schwann_integrated <- subset(sc_combined, idents = c("Neural/glial cells", "Schwann cells"))
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(Agca_snLLC_CTL, Agca_snLLC_LLC, Brown_scLLC_CTL, Brown_scLLC_2w, Brown_scLLC_2.5w, Brown_scLLC_3.5w, Kim_scB16F10_CTL, Kim_scB16F10_B16F10, Pryce_scC26_CTL, Pryce_scC26_C26, Pryce_scKPP_CTL, Pryce_scKPP_KPP, Zhang_snKIC_CTL, Zhang_snKIC_KIC, DEGs_sc_combined, all_genes)
+```
+
+
+
+# Plot UMAP 
+
+## Highlighting cells
+
+```{r}
+Idents(sc_combined) <- "seurat_clusters"
+
+sc_combined$highlight_cells <- "Other"
+
+sc_combined$highlight_cells[sc_combined$seurat_clusters == "Neural/glial cells"] <- "Neural/glial cells"
+sc_combined$highlight_cells[sc_combined$seurat_clusters == "Schwann cells"] <- "Schwann cells"
+
+
+DimPlot(
+  sc_combined,
+  reduction = "umap",
+  group.by = "highlight_cells",
+  cols = c(
+    "Other" = "grey85",
+    "Neural/glial cells" = "#FF7F00",
+    "Schwann cells" = "#FFA64D"
+  ),
+  pt.size = 1, raster = FALSE
+) +
+  ggplot2::labs(title = NULL, x = "UMAP1", y = "UMAP2") +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    legend.position = "right"
+  )
+```
+
+```{r}
+rm(sc_combined)
+```
+
+
+## By condition
+
+```{r}
+DimPlot(ng_integrated, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+
+DimPlot(schwann_integrated, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+
+# CTLs and tumour-bearing combined
+
+```{r, include=FALSE}
+ctl_samples <- c(
+  "Agca_snLLC_CTL",
+  "Brown_scLLC_CTL",
+  "Kim_scB16F10_CTL",
+  "Pryce_scC26_CTL",
+  "Pryce_scKPP_CTL",
+  "Zhang_snKIC_CTL"
+)
+
+
+
+ng_integrated$condition <- ifelse(
+  ng_integrated$orig.ident %in% ctl_samples,
+  "CTL",
+  "Tumour-bearing")
+
+schwann_integrated$condition <- ifelse(
+  schwann_integrated$orig.ident %in% ctl_samples,
+  "CTL",
+  "Tumour-bearing")
+
+
+
+rm(ctl_samples)
+```
+
+
+
+# GO terms
+
+## Get DEGs in tumour-bearing cells
+
+```{r, include=FALSE}
+Idents(ng_integrated) <- "orig.ident"
+Idents(schwann_integrated) <- "orig.ident"
+
+
+
+DEGs_cachectic_ng_integrated <- FindMarkers(ng_integrated, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Agca_snLLC_CTL", "Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL", "Zhang_snKIC_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+
+DEGs_cachectic_schwann_integrated <- FindMarkers(schwann_integrated, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Agca_snLLC_CTL", "Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL", "Zhang_snKIC_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+```
+
+
+## Subset DEG for p_val_adj < 0.05
+
+```{r, include=FALSE}
+DEGs_cachectic_ng_integrated <- na.omit(DEGs_cachectic_ng_integrated)
+
+DEGs_cachectic_schwann_integrated <- na.omit(DEGs_cachectic_schwann_integrated)
+
+
+
+DEGs_cachectic_ng_integrated <- subset(DEGs_cachectic_ng_integrated, p_val_adj < 0.05)
+
+DEGs_cachectic_schwann_integrated <- subset(DEGs_cachectic_schwann_integrated, p_val_adj < 0.05)
+```
+
+```{r, include=FALSE}
+write.csv(DEGs_cachectic_ng_integrated, file = "DEGs_cachectic_ng_integrated.csv")
+
+write.csv(DEGs_cachectic_schwann_integrated, file = "DEGs_cachectic_schwann_integrated.csv")
+```
+
+
+## Take the row names of the specified genes in each condition that have an -2 > avg_log2FC > 0.2
+
+```{r, include=FALSE}
+DEGs_cachectic_ng_integrated_up <- rownames(DEGs_cachectic_ng_integrated[DEGs_cachectic_ng_integrated$avg_log2FC > 0.2,])
+
+DEGs_cachectic_schwann_integrated_up <- rownames(DEGs_cachectic_schwann_integrated[DEGs_cachectic_schwann_integrated$avg_log2FC > 0.2,])
+
+
+
+DEGs_cachectic_ng_integrated_down <- rownames(DEGs_cachectic_ng_integrated[DEGs_cachectic_ng_integrated$avg_log2FC < -0.2,])
+
+DEGs_cachectic_schwann_integrated_down <- rownames(DEGs_cachectic_schwann_integrated[DEGs_cachectic_schwann_integrated$avg_log2FC < -0.2,])
+```
+
+
+## Run GO analysis
+
+```{r, include=FALSE}
+DEGs_cachectic_ng_integrated_upgo <- enrichGO(gene = DEGs_cachectic_ng_integrated_up, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_schwann_integrated_upgo <- enrichGO(gene = DEGs_cachectic_schwann_integrated_up, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+
+
+DEGs_cachectic_ng_integrated_downgo <- enrichGO(gene = DEGs_cachectic_ng_integrated_down, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+
+DEGs_cachectic_schwann_integrated_downgo <- enrichGO(gene = DEGs_cachectic_schwann_integrated_down, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+```
+
+
+## .csv for GO terms
+
+```{r, include=FALSE}
+write.csv(DEGs_cachectic_ng_integrated_upgo, file = "ng_integrated_upgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_schwann_integrated_upgo, file = "schwann_integrated_upgo.csv", row.names = TRUE)
+
+
+
+write.csv(DEGs_cachectic_ng_integrated_downgo, file = "ng_integrated_downgo.csv", row.names = TRUE)
+write.csv(DEGs_cachectic_schwann_integrated_downgo, file = "schwann_integrated_downgo.csv", row.names = TRUE)
+```
+
+
+## Visualize GO terms
+
+### Neural/glial cells Immune/inflammation response UP (11/56)
+
+```{r}
+immune_ng_up <- c(10, 11, 36, 42, 46, 47, 51, 52, 53, 54, 55)
+go_immune_ng_up <- DEGs_cachectic_ng_integrated_upgo[immune_ng_up, ]
+
+go_immune_ng_up$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_immune_ng_up$Description)
+
+ggplot(go_immune_ng_up, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO Integrated Neural/glial cells - Immune-related terms") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Neural/glial cells neurogenesis DOWN (manually sampled top 100 terms for those related to neurogenesis - 36/top 100, only sampling top 50)
+
+```{r}
+neuro_ng_down <- c(1, 2, 6, 8, 10, 12, 13, 14, 20, 23, 28, 33, 36, 40, 41, 44, 45, 47, 49)
+go_neuro_ng_down <- DEGs_cachectic_ng_integrated_downgo[neuro_ng_down, ]
+
+go_neuro_ng_down$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_neuro_ng_down$Description)
+
+ggplot(go_neuro_ng_down, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "DOWN GO Integrated Neural/glial cells - Neurogenesis (of top 50)") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Schwann cells neurogenesis DOWN (16/73)
+
+```{r}
+neuro_schwann_down <- c(1, 2, 3, 4, 5, 9, 12, 22, 24, 28, 35, 36, 37, 50, 56, 66)
+go_neuro_schwann_down <- DEGs_cachectic_schwann_integrated_downgo[neuro_schwann_down, ]
+
+go_neuro_schwann_down$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_neuro_schwann_down$Description)
+
+ggplot(go_neuro_schwann_down, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "DOWN GO Integrated Schwann cells - Neurogenesis (16/73)") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+### Schwann cells muscle-related DOWN (6/73)
+
+```{r}
+muscle_schwann_down <- c(17, 23, 26, 33, 34, 41)
+go_muscle_schwann_down <- DEGs_cachectic_schwann_integrated_downgo[muscle_schwann_down, ]
+
+go_muscle_schwann_down$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", go_muscle_schwann_down$Description)
+
+ggplot(go_muscle_schwann_down, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "DOWN GO Integrated Schwann cells - Muscle-related (6/73)") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(DEGs_cachectic_ng_integrated, DEGs_cachectic_schwann_integrated, DEGs_cachectic_ng_integrated_down, DEGs_cachectic_ng_integrated_downgo, DEGs_cachectic_ng_integrated_up, DEGs_cachectic_ng_integrated_upgo, DEGs_cachectic_schwann_integrated_down, DEGs_cachectic_schwann_integrated_downgo, DEGs_cachectic_schwann_integrated_up, DEGs_cachectic_schwann_integrated_upgo, go_immune_ng_up, go_muscle_schwann_down, go_neuro_ng_down, go_neuro_schwann_down, immune_ng_up, muscle_schwann_down, neuro_ng_down, neuro_schwann_down)
+```
+
+
+
+# -----------------------------------------------------------------------------
+# Load integrated muscle CellChat ---------------------------------------------
+# -----------------------------------------------------------------------------
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat_integrated.RData")
+
+cluster_colours <- c(
+    "Muscle Satellite cells"                = "#FF7FBF",
+    "Muscle Myoblasts"                      = "#FF3F80",
+    "Muscle Myonuclei"                      = "#E00000",
+    "Muscle Endothelial cells"              = "#FFFF00",
+    "Muscle vSMCs"                          = "#BC9D00",
+    "Muscle Pericytes"                      = "#8B5A2B",
+    "Muscle FAPs"                           = "#7CFC00",
+    "Muscle Tenocytes"                      = "#228B22",
+    "Muscle Platelets"                      = "#D46A6A", 
+    "Muscle Mast cells"                     = "#C85C8C", 
+    "Muscle Dendritic cells"                = "#B84D9E", 
+    "Muscle Monocytes"                      = "#80E5FF",
+    "Muscle Macrophages"                    = "#1E90FF",
+    "Muscle Neutrophils"                    = "#4169E1",
+    "Muscle B cells"                        = "#C9A2FF",
+    "Muscle T cells"                        = "#B44CFF",
+    "Muscle NK cells"                       = "#5B0E8A",
+    "Muscle Neural/glial cells"             = "#FF7F00",
+    "Muscle Schwann cells"                  = "#FFA64D",
+    "Tumour Malignant cells"                = "#C0C0C0",
+    "Tumour Endothelial cells"              = "#FFFF00",
+    "Tumour Cancer-associated fibroblasts"  = "#7CFC00",
+    "Tumour Monocytes/macrophages"          = "#99CBFF",
+    "Tumour Neutrophils"                    = "#4169E1",
+    "Tumour B cells"                        = "#C9A2FF",
+    "Tumour T cells"                        = "#B44CFF",
+    "Tumour NK cells"                       = "#5B0E8A"
+)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(cellchat_ctl_ecm, cellchat_ctl_ccc, cellchat_ctl_nps, cellchat_tb_ecm, cellchat_tb_ccc, cellchat_tb_nps)
+```
+
+
+
+# Heatmap to show tumour communication to Neural/glial and Schwann cells
+
+```{r}
+tumour_to_neuro_counts_mat <- cellchat_tb_secreted@net$count[
+  c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells"),
+  c("Muscle Neural/glial cells", "Muscle Schwann cells")]
+
+pheatmap(
+  tumour_to_neuro_counts_mat,
+  color = colorRampPalette(c("white", "red"))(15),
+  breaks = seq(0, 15, length.out = 16),
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  fontsize = 8,
+  angle_col = 45,
+  cellwidth = 10,
+  cellheight = 10
+  )
+```
+
+
+
+# Heatmap of change in neural/glial and schwann cell communication within the muscle
+
+```{r}
+ctl_muscle_neuro_counts_mat <- cellchat_ctl_all@net$count[
+  c("Muscle Neural/glial cells", "Muscle Schwann cells"),
+  c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")]
+
+tb_muscle_neuro_counts_mat <- cellchat_tb_all@net$count[
+  c("Muscle Neural/glial cells", "Muscle Schwann cells"),
+  c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")]
+
+diff_counts_mat <- tb_muscle_neuro_counts_mat - ctl_muscle_neuro_counts_mat
+
+n_neg <- 50   # -40 → 0
+n_pos <- 50   # 0 → 40
+
+# Create two color gradients
+neg_colours <- colorRampPalette(c("blue", "white"))(n_neg)
+pos_colours <- colorRampPalette(c("white", "red"))(n_pos)
+colours <- c(neg_colours, pos_colours)
+
+# Define breaks to match colors
+breaks <- seq(-50, 50, length.out = length(colours) + 1)
+
+# Plot
+pheatmap(
+  diff_counts_mat,
+  color = colours,
+  breaks = breaks,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  fontsize = 8,
+  angle_col = 45,
+  cellwidth = 10,
+  cellheight = 10
+)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(ctl_muscle_neuro_counts_mat, tb_muscle_neuro_counts_mat, diff_counts_mat, tumour_to_neuro_counts_mat, breaks, colours, n_neg, n_pos, neg_colours, pos_colours)
+```
+
+
+
+# Enriched signaling pathways from Tumour to muscle neural/glial and schwann cells
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_tb_secreted <- subsetCommunication(cellchat_tb_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_tb_secreted <- netP_tb_secreted[
+  netP_tb_secreted$source %in% c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells") & 
+  netP_tb_secreted$target %in% c("Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_tb_secreted$pathway_name)
+```
+
+
+## Check to see which pathways are common between tumour models (from tumour to muscle monocytes, macrophages, neutrophils, NK cells)
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat_split.RData")
+
+rm(cellchat_B16_ctl_meta, cellchat_B16_end_meta, cellchat_C26_ctl_meta, cellchat_C26_end_meta, cellchat_LLC_ctl_meta, cellchat_LLC_end_meta, cellchat_KPP_KIC_ctl_meta, cellchat_KPP_KIC_end_meta, cellchat_B16_ctl_ecm, cellchat_B16_ctl_ccc, cellchat_B16_ctl_nps, cellchat_C26_ctl_ecm, cellchat_C26_ctl_ccc, cellchat_C26_ctl_nps, cellchat_LLC_ctl_ecm, cellchat_LLC_ctl_ccc, cellchat_LLC_ctl_nps, cellchat_KPP_KIC_ctl_ecm, cellchat_KPP_KIC_ctl_ccc, cellchat_KPP_KIC_ctl_nps, cellchat_B16_end_ecm, cellchat_B16_end_ccc, cellchat_B16_end_nps, cellchat_C26_end_ecm, cellchat_C26_end_ccc, cellchat_C26_end_nps, cellchat_LLC_end_ecm, cellchat_LLC_end_ccc, cellchat_LLC_end_nps, cellchat_KPP_KIC_end_ecm, cellchat_KPP_KIC_end_ccc, cellchat_KPP_KIC_end_nps)
+```
+
+### B16
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_B16_end_secreted <- subsetCommunication(cellchat_B16_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_B16_end_secreted <- netP_B16_end_secreted[
+  netP_B16_end_secreted$source %in% c("Tumour ECs/CAFs", "Tumour Monocytes/macrophages", "Tumour Tumour cells") & 
+  netP_B16_end_secreted$target %in% c("Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_B16_end_secreted$pathway_name)
+```
+
+### C26
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_C26_end_secreted <- subsetCommunication(cellchat_C26_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_C26_end_secreted <- netP_C26_end_secreted[
+  netP_C26_end_secreted$source %in% c("Tumour CAFs", "Tumour Monocytes", "Tumour Macrophages", "Tumour Neutrophils", "Tumour T cells", "Tumour NK cells") & 
+  netP_C26_end_secreted$target %in% c("Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_C26_end_secreted$pathway_name)
+```
+
+### LLC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_LLC_end_secreted <- subsetCommunication(cellchat_LLC_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_LLC_end_secreted <- netP_LLC_end_secreted[
+  netP_LLC_end_secreted$source %in% c("Tumour Malignant cells", "Tumour EC/CAFs", "Tumour Dendritic cells", "Tumour Monocytes", "Tumour Macrophages", "Tumour Neutrophils", "Tumour T cells/NK cels") & 
+  netP_LLC_end_secreted$target %in% c("Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_LLC_end_secreted$pathway_name)
+```
+
+### KPP_KIC
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_KPP_KIC_end_secreted <- subsetCommunication(cellchat_KPP_KIC_end_secreted, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_KPP_KIC_end_secreted <- netP_KPP_KIC_end_secreted[
+  netP_KPP_KIC_end_secreted$source %in% c("Tumour Malignant cells", "Tumour CAFs", "Tumour Endothelial cells", "Tumour Monocytes", "Tumour Macrophages") & 
+  netP_KPP_KIC_end_secreted$target %in% c("Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_KPP_KIC_end_secreted$pathway_name)
+```
+
+### NOTE - SPP1 is the only pathway enriched to neural/glial and schwann cells from the tumours in all 4 tumour models.
+
+
+## Dotplot of enriched signaling from tumour to muscle
+
+```{r, include=FALSE}
+selectK(cellchat_ctl_secreted, pattern = "outgoing")
+selectK(cellchat_ctl_secreted, pattern = "incoming")
+
+selectK(cellchat_tb_secreted, pattern = "outgoing")
+selectK(cellchat_tb_secreted, pattern = "incoming")
+
+cellchat_ctl_secreted <- identifyCommunicationPatterns(cellchat_ctl_secreted, pattern = "outgoing", k = 6)
+cellchat_ctl_secreted <- identifyCommunicationPatterns(cellchat_ctl_secreted, pattern = "incoming", k = 5)
+
+cellchat_tb_secreted <- identifyCommunicationPatterns(cellchat_tb_secreted, pattern = "outgoing", k = 10)
+cellchat_tb_secreted <- identifyCommunicationPatterns(cellchat_tb_secreted, pattern = "incoming", k = 6)
+```
+
+```{r}
+netAnalysis_dot(cellchat_tb_secreted, pattern = "outgoing", pathway.show = "SPP1", group.show = c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells"), color.use = cluster_colours)
+```
+
+```{r}
+netAnalysis_dot(cellchat_tb_secreted, pattern = "incoming", pathway.show = "SPP1", group.show = c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"), color.use = cluster_colours)
+```
+
+
+
+# Enriched signaling pathways from Neural/glial and Schwann cells to all muscle cells
+
+## CTLs 
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_ctl_all <- subsetCommunication(cellchat_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_ctl_all <- netP_ctl_all[
+  netP_ctl_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_ctl_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_ctl_all$pathway_name)
+```
+
+
+## Tumour-bearing
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_tb_all <- subsetCommunication(cellchat_tb_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_tb_all <- netP_tb_all[
+  netP_tb_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_tb_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_tb_all$pathway_name)
+```
+
+### NOTE - CHEMERIN, ANNEXIN up in tumour-bearing neural/glial and schwann cells to all muscle cells, but not controls 
+
+### NOTE - NOTCH, AGRN, EPHA, SEMA5, SEMA4, Testosterone, EDA, TWEAK, FLRT, SPP1  down in tumour-bearing neural/glial and schwann cells to all muscle cells
+
+
+## Check to see which pathways are common between tumour models (from muscle neural/glial and schwann cells to all muscle cells)
+
+### B16 CTL
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_B16_ctl_all <- subsetCommunication(cellchat_B16_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_B16_ctl_all <- netP_B16_ctl_all[
+  netP_B16_ctl_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_B16_ctl_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_B16_ctl_all$pathway_name)
+```
+
+### B16 end
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_B16_end_all <- subsetCommunication(cellchat_B16_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_B16_end_all <- netP_B16_end_all[
+  netP_B16_end_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_B16_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_B16_end_all$pathway_name)
+```
+
+### NOTE - COMPLEMENT, DHEAS up in tumour-bearing
+### NOTE - THBS, UNC5, Testosterone, PERIOSTIN, IL16, SEMA5 down in tumour-bearing
+
+### C26 CTL
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_C26_ctl_all <- subsetCommunication(cellchat_C26_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_C26_ctl_all <- netP_C26_ctl_all[
+  netP_C26_ctl_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_C26_ctl_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_C26_ctl_all$pathway_name)
+```
+
+### C26 end
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_C26_end_all <- subsetCommunication(cellchat_C26_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_C26_end_all <- netP_C26_end_all[
+  netP_C26_end_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_C26_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_C26_end_all$pathway_name)
+```
+
+### NOTE - ApoE, ANNEXIN, DHEA, CSF up in tumour-bearing
+### NOTE - NOTCH, AGRN, ANGPT, BMP, GAP, NECTIN, SEMA6, THBS, UNC5, VEGF, VISFATIN, WNT, CHEMERIN, Cholesterol, PERIOSTIN, SLITRK, TENASCIN, ADGRA, ADGRB, FLRT, GRN, HH, PCDH, IL16, MHC-II, SLP down in tumour-bearing
+
+### LLC CTL
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_LLC_ctl_all <- subsetCommunication(cellchat_LLC_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_LLC_ctl_all <- netP_LLC_ctl_all[
+  netP_LLC_ctl_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_LLC_ctl_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_LLC_ctl_all$pathway_name)
+```
+
+### LLC end
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_LLC_end_all <- subsetCommunication(cellchat_LLC_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_LLC_end_all <- netP_LLC_end_all[
+  netP_LLC_end_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_LLC_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"), 
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_LLC_end_all$pathway_name)
+```
+
+### NOTE - Prostaglandin, Netrin up in tumour-bearing
+### NOTE - Testosterone, 2-AG, GRN, SEMA5, FLRT, Cholesterol down in tumour-bearing
+
+### KPP_KIC CTL
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_KPP_KIC_ctl_all <- subsetCommunication(cellchat_KPP_KIC_ctl_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_KPP_KIC_ctl_all <- netP_KPP_KIC_ctl_all[
+  netP_KPP_KIC_ctl_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_KPP_KIC_ctl_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_KPP_KIC_ctl_all$pathway_name)
+```
+
+### KPP_KIC end
+
+```{r}
+### Extract communication probabilities at the pathway level
+netP_KPP_KIC_end_all <- subsetCommunication(cellchat_KPP_KIC_end_all, slot.name = "netP")
+
+### Subset for enriched pathways for target cells to source cells
+netP_KPP_KIC_end_all <- netP_KPP_KIC_end_all[
+  netP_KPP_KIC_end_all$source %in% c("Muscle Neural/glial cells", "Muscle Schwann cells") & 
+  netP_KPP_KIC_end_all$target %in% c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"),
+]
+
+### Get unique pathways from specified cells to target cells
+unique(netP_KPP_KIC_end_all$pathway_name)
+```
+
+### NOTE - FN1, CHEMERIN, RELN up in tumour-bearing
+### NOTE - GALECTIN, GAP, HSPG, L1CAM, NEGR, NGL, KLK, SPP1, JAM, MAG, EGF, FGF, KIT down in tumour-bearing
+
+### COMPLEMENT, DHEAS, ApoE, ANNEXIN, DHEA, CSF, Prostaglandin, Netrin, FN1, CHEMERIN, RELN UP in tumour-bearing, but different between tumour models. NONE OF THESE were enriched in the combined tumours.
+
+### THBS, UNC5, Testosterone, PERIOSTIN, IL16, SEMA5, NOTCH, AGRN, ANGPT, BMP, GAP, NECTIN, SEMA6, VEGF, VISFATIN, WNT, CHEMERIN, Cholesterol, SLITRK, TENASCIN, ADGRA, ADGRB, FLRT, GRN, HH, PCDH, MHC-II, SLP, 2-AG, GALECTIN, HSPG, L1CAM, NEGR, NGL, KLK, SPP1, JAM, MAG, EGF, FGF, KIT lost in tumour-bearing, different between tumour models. NOTCH, AGRN, SEMA5, Testosterone, FLRT, SPP1 down in combined tumour models, stick with those pathways moving forward.
+
+
+## Dotplot of enriched signaling from muscle neural/glial and schwann cells to all muscle cells
+
+```{r, include=FALSE}
+selectK(cellchat_ctl_all, pattern = "outgoing")
+selectK(cellchat_ctl_all, pattern = "incoming")
+
+selectK(cellchat_tb_all, pattern = "outgoing")
+selectK(cellchat_tb_all, pattern = "incoming")
+
+cellchat_ctl_all <- identifyCommunicationPatterns(cellchat_ctl_all, pattern = "outgoing", k = 4)
+cellchat_ctl_all <- identifyCommunicationPatterns(cellchat_ctl_all, pattern = "incoming", k = 5)
+
+cellchat_tb_all <- identifyCommunicationPatterns(cellchat_tb_all, pattern = "outgoing", k = 7)
+cellchat_tb_all <- identifyCommunicationPatterns(cellchat_tb_all, pattern = "incoming", k = 7)
+```
+
+### Lost signaling from neural/glial and schwann cells
+
+```{r}
+netAnalysis_dot(cellchat_ctl_secreted, pattern = "incoming", pathway.show = c("NOTCH", "AGRN", "SEMA5", "Testosterone", "FLRT", "SPP1"), group.show = c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"), color.use = cluster_colours)
+
+netAnalysis_dot(cellchat_tb_secreted, pattern = "incoming", pathway.show = c("NOTCH", "AGRN", "SEMA5", "Testosterone", "FLRT", "SPP1"), group.show = c("Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells"), color.use = cluster_colours)
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(cellchat_ctl_all, cellchat_ctl_secreted, cellchat_tb_all, cellchat_tb_secreted, cellchat_B16_ctl_all, cellchat_B16_ctl_secreted, cellchat_B16_end_all, cellchat_B16_end_secreted, cellchat_C26_ctl_all, cellchat_C26_ctl_secreted, cellchat_C26_end_all, cellchat_C26_end_secreted, cellchat_LLC_ctl_all, cellchat_LLC_ctl_secreted, cellchat_LLC_end_all, cellchat_LLC_end_secreted, cellchat_KPP_KIC_ctl_all, cellchat_KPP_KIC_ctl_secreted, cellchat_KPP_KIC_end_all, cellchat_KPP_KIC_end_secreted, B16_ctl_cluster_colours, B16_end_cluster_colours, C26_ctl_cluster_colours, C26_end_cluster_colours, LLC_ctl_cluster_colours, LLC_end_cluster_colours, KPP_KIC_ctl_cluster_colours, KPP_KIC_end_cluster_colours, netP_B16_end_secreted, netP_C26_end_secreted, netP_LLC_end_secreted, netP_KPP_KIC_end_secreted, netP_ctl_all, netP_tb_all, netP_B16_ctl_all, netP_B16_end_all, netP_C26_ctl_all, netP_C26_end_all, netP_LLC_ctl_all, netP_LLC_end_all, netP_KPP_KIC_ctl_all, netP_KPP_KIC_end_all, netP_tb_secreted)
+```
+
+
+
+# Relative information flow of enriched neural/glial and schwann cell signaling pathways
+
+## Load integrated muscle data (muscle+tumours won't work)
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/cellchat/integrated_cellchat_muscle.RData")
+
+rm(cellchat_ctl_secreted, cellchat_ctl_ecm, cellchat_ctl_nps, cellchat_ctl_ccc, cellchat_end_secreted, cellchat_end_ecm, cellchat_end_nps, cellchat_end_ccc)
+```
+
+## Merge cellchat objects
+
+```{r, include=FALSE}
+object.list <- list("CTL" = cellchat_ctl_all, "Tumour-bearing" = cellchat_end_all)
+
+names(object.list)
+
+cellchat_merged_all <- mergeCellChat(object.list, add.names = names(object.list))
+```
+
+
+## Information flow of enriched pathways
+
+### NOTE - Pathways highlighted BLUE are significantly higher in CTL, RED in TUMOUR-BEARING, BLACK are equal.
+
+```{r}
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = "Neural/glial cells", color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = "Schwann cells", color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+
+rankNet(cellchat_merged_all, mode = "comparison", stacked = TRUE, do.stat = TRUE, sources.use = c("Neural/glial cells", "Schwann cells"), color.use = c("CTL" = "blue", "Tumour-bearing" = "red"))
+```
+
+
+
+# Denervation score on neural/glial and Schwann cells
+
+## Load Nicoletti_2023 data
+
+```{r, include=FALSE}
+rm(sc_combined)
+
+load("C:/Users/nwb_l/Documents/r_projects/Nicoletti_2023_scRNAseq/Nicoletti_2023_processed.RData")
+
+rm(anchors_merge, cachexia_score, ctl_1_data, ctl_1_dbl, ctl_1_seurat, ctl_1_seurat_filtered, ctl_1_seurat_norm, ctl_1_singlets, ctl_2_data, ctl_2_dbl, ctl_2_seurat, ctl_2_seurat_filtered, ctl_2_seurat_norm, ctl_2_singlets, den_MuSCs, DEGs_den_MuSCs, den15d_1_data, den15d_1_dbl, den15d_1_seurat, den15d_1_seurat_filtered, den15d_1_seurat_norm, den15d_1_singlets, den15d_2_data, den15d_2_dbl, den15d_2_seurat, den15d_2_seurat_filtered, den15d_2_seurat_norm, den15d_2_singlets, den2d_1_data, den2d_1_dbl, den2d_1_seurat, den2d_1_seurat_filtered, den2d_1_seurat_norm, den2d_1_singlets, den2d_2_data, den2d_2_dbl, den2d_2_seurat, den2d_2_seurat_filtered, den2d_2_seurat_norm, den2d_2_singlets, den5d_1_data, den5d_1_dbl, den5d_1_seurat, den5d_1_seurat_filtered, den5d_1_seurat_norm, den5d_1_singlets, den5d_2_data, den5d_2_dbl, den5d_2_seurat, den5d_2_seurat_filtered, den5d_2_seurat_norm, den5d_2_singlets, means_cachexia_score, ordered_datasets, all_genes, all_genes_ctl_1, all_genes_ctl_2, all_genes_den15d_1, all_genes_den15d_2, all_genes_den2d_1, all_genes_den2d_2, all_genes_den5d_1, all_genes_den5d_2, cachexia_gene_list, cluster_ids, cluster_labels, cluster_to_cell_type, features_merge, metric, umap.method)
+```
+
+
+## Subset Nicoletti dataset for Neural/glial and Schwann cells
+
+```{r, include=FALSE}
+Idents(den_combined) <- "seurat_clusters"
+
+den_ng_schwann <- subset(den_combined, idents = "Neural/glial/Schwann cells")
+
+rm(den_combined)
+```
+
+
+## Number of Neural/glial/Schwann cells in den_ng_schwann
+
+```{r}
+table(den_ng_schwann$orig.ident)
+```
+
+
+## DEGs for upregulated genes with denervation
+
+```{r, include=FALSE}
+Idents(den_ng_schwann) <- "orig.ident"
+
+deg_den_2d <- FindMarkers(den_ng_schwann, ident.1 = "DEN2d", ident.2 = "CTL", logfc.threshold = 0.2, min.pct = 0.10, verbose = FALSE)
+
+deg_den_5d <- FindMarkers(den_ng_schwann, ident.1 = "DEN5d", ident.2 = "CTL", logfc.threshold = 0.2, min.pct = 0.10, verbose = FALSE)
+
+deg_den_15d <- FindMarkers(den_ng_schwann, ident.1 = "DEN15d", ident.2 = "CTL", logfc.threshold = 0.2, min.pct = 0.10, verbose = FALSE)
+```
+
+
+## Subset for avg_log2FC > 0.2 and p_val_adj < 0.05
+
+```{r, include=FALSE}
+deg_den_2d <- subset(deg_den_2d, avg_log2FC > 0.2 & p_val_adj < 0.05)
+
+deg_den_5d <- subset(deg_den_5d, avg_log2FC > 0.2 & p_val_adj < 0.05)
+
+deg_den_15d <- subset(deg_den_15d, avg_log2FC > 0.2 & p_val_adj < 0.05)
+```
+
+
+## Get a list of genes upregulated with denervation at 2d, 5d, 15d
+
+```{r, include=FALSE}
+deg_den_2d_gene_list <- rownames(deg_den_2d)
+
+deg_den_5d_gene_list <- rownames(deg_den_5d)
+
+deg_den_15d_gene_list <- rownames(deg_den_15d)
+```
+
+
+## AddModuleScore
+
+```{r, include=FALSE}
+den_2d_score <- AddModuleScore_UCell(ng_schwann_integrated, features = deg_den_2d_gene_list, name = "den_2d_score")
+
+den_5d_score <- AddModuleScore_UCell(ng_schwann_integrated, features = deg_den_5d_gene_list, name = "den_5d_score")
+
+den_15d_score <- AddModuleScore_UCell(ng_schwann_integrated, features = deg_den_15d_gene_list, name = "den_15d_score")
+
+
+
+means_den_2d_score <- den_2d_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_den_2d_score = mean(signature_1den_2d_score, na.rm = TRUE))
+
+means_den_5d_score <- den_5d_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_den_5d_score = mean(signature_1den_5d_score, na.rm = TRUE))
+
+means_den_15d_score <- den_15d_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_den_15d_score = mean(signature_1den_15d_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_den_2d_score)
+```
+
+```{r}
+print(means_den_5d_score)
+```
+
+```{r}
+print(means_den_15d_score)
+```
+
+```{r}
+VlnPlot(den_2d_score, features = "signature_1den_2d_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "Denervation score (2 days)", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+VlnPlot(den_5d_score, features = "signature_1den_5d_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "Denervation score (5 days)", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+VlnPlot(den_15d_score, features = "signature_1den_15d_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "Denervation score (15 days)", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(deg_den_15d, deg_den_2d, deg_den_5d, den_15d_score, den_2d_score, den_5d_score, den_ng_schwann, means_den_15d_score, means_den_2d_score, means_den_5d_score, ng_integrated, ng_schwann_integrated, schwann_integrated, deg_den_15d_gene_list, deg_den_2d_gene_list, deg_den_5d_gene_list)
+```
+
+
+
+# Denervation score on myonuclei
+
+## Load integrated myonuclei data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/muscle_integrated.RData")
+
+rm(Agca_snLLC_CTL, Agca_snLLC_LLC, Brown_scLLC_CTL, Brown_scLLC_2w, Brown_scLLC_2.5w, Brown_scLLC_3.5w, Kim_scB16F10_CTL, Kim_scB16F10_B16F10, Pryce_scC26_CTL, Pryce_scC26_C26, Pryce_scKPP_CTL, Pryce_scKPP_KPP, Zhang_snKIC_CTL, Zhang_snKIC_KIC, DEGs_sc_combined, all_genes)
+
+Idents(sc_combined) <- "seurat_clusters"
+
+myonuclei_integrated <- subset(sc_combined, idents = "Myonuclei")
+
+rm(sc_combined)
+```
+
+
+## Load Nicoletti_2023 myonuclei data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/Nicoletti_2023_scRNAseq/Nicoletti_2023_processed.RData")
+
+rm(anchors_merge, cachexia_score, ctl_1_data, ctl_1_dbl, ctl_1_seurat, ctl_1_seurat_filtered, ctl_1_seurat_norm, ctl_1_singlets, ctl_2_data, ctl_2_dbl, ctl_2_seurat, ctl_2_seurat_filtered, ctl_2_seurat_norm, ctl_2_singlets, den_MuSCs, DEGs_den_MuSCs, den15d_1_data, den15d_1_dbl, den15d_1_seurat, den15d_1_seurat_filtered, den15d_1_seurat_norm, den15d_1_singlets, den15d_2_data, den15d_2_dbl, den15d_2_seurat, den15d_2_seurat_filtered, den15d_2_seurat_norm, den15d_2_singlets, den2d_1_data, den2d_1_dbl, den2d_1_seurat, den2d_1_seurat_filtered, den2d_1_seurat_norm, den2d_1_singlets, den2d_2_data, den2d_2_dbl, den2d_2_seurat, den2d_2_seurat_filtered, den2d_2_seurat_norm, den2d_2_singlets, den5d_1_data, den5d_1_dbl, den5d_1_seurat, den5d_1_seurat_filtered, den5d_1_seurat_norm, den5d_1_singlets, den5d_2_data, den5d_2_dbl, den5d_2_seurat, den5d_2_seurat_filtered, den5d_2_seurat_norm, den5d_2_singlets, means_cachexia_score, ordered_datasets, all_genes, all_genes_ctl_1, all_genes_ctl_2, all_genes_den15d_1, all_genes_den15d_2, all_genes_den2d_1, all_genes_den2d_2, all_genes_den5d_1, all_genes_den5d_2, cachexia_gene_list, cluster_ids, cluster_labels, cluster_to_cell_type, features_merge, metric, umap.method)
+
+Idents(den_combined) <- "seurat_clusters"
+
+myonuclei_den <- subset(den_combined, idents = "Myonuclei")
+
+rm(den_combined)
+```
+
+
+## Number of Myonuclei in den_ng_schwann
+
+```{r}
+table(myonuclei_den$orig.ident)
+```
+
+
+## DEGs for upregulated genes with denervation
+
+```{r, include=FALSE}
+Idents(myonuclei_den) <- "orig.ident"
+
+deg_den_2d <- FindMarkers(myonuclei_den, ident.1 = "DEN2d", ident.2 = "CTL", logfc.threshold = 0.2, min.pct = 0.10, verbose = FALSE)
+
+deg_den_5d <- FindMarkers(myonuclei_den, ident.1 = "DEN5d", ident.2 = "CTL", logfc.threshold = 0.2, min.pct = 0.10, verbose = FALSE)
+
+deg_den_15d <- FindMarkers(myonuclei_den, ident.1 = "DEN15d", ident.2 = "CTL", logfc.threshold = 0.2, min.pct = 0.10, verbose = FALSE)
+```
+
+
+## Subset for avg_log2FC > 0.2 and p_val_adj < 0.05
+
+```{r, include=FALSE}
+deg_den_2d <- subset(deg_den_2d, avg_log2FC > 0.2 & p_val_adj < 0.05)
+
+deg_den_5d <- subset(deg_den_5d, avg_log2FC > 0.2 & p_val_adj < 0.05)
+
+deg_den_15d <- subset(deg_den_15d, avg_log2FC > 0.2 & p_val_adj < 0.05)
+```
+
+
+## Get a list of genes upregulated with denervation at 2d, 5d, 15d
+
+```{r, include=FALSE}
+deg_den_2d_gene_list <- rownames(deg_den_2d)
+
+deg_den_5d_gene_list <- rownames(deg_den_5d)
+
+deg_den_15d_gene_list <- rownames(deg_den_15d)
+```
+
+
+## AddModuleScore
+
+```{r, include=FALSE}
+den_2d_score <- AddModuleScore_UCell(myonuclei_integrated, features = deg_den_2d_gene_list, name = "den_2d_score")
+
+den_5d_score <- AddModuleScore_UCell(myonuclei_integrated, features = deg_den_5d_gene_list, name = "den_5d_score")
+
+den_15d_score <- AddModuleScore_UCell(myonuclei_integrated, features = deg_den_15d_gene_list, name = "den_15d_score")
+
+
+
+means_den_2d_score <- den_2d_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_den_2d_score = mean(signature_1den_2d_score, na.rm = TRUE))
+
+means_den_5d_score <- den_5d_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_den_5d_score = mean(signature_1den_5d_score, na.rm = TRUE))
+
+means_den_15d_score <- den_15d_score@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(average_den_15d_score = mean(signature_1den_15d_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_den_2d_score)
+```
+
+```{r}
+print(means_den_5d_score)
+```
+
+```{r}
+print(means_den_15d_score)
+```
+
+```{r}
+VlnPlot(den_2d_score, features = "signature_1den_2d_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "Denervation score (2 days)", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+VlnPlot(den_5d_score, features = "signature_1den_5d_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "Denervation score (5 days)", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+VlnPlot(den_15d_score, features = "signature_1den_15d_score", group.by = "orig.ident", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "Denervation score (15 days)", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
