@@ -1,0 +1,289 @@
+---
+title: "tumours_integrating"
+author: "Alex Brown"
+date: "2026-02-11"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(gridExtra)
+library(harmony)
+```
+
+
+
+# Load data
+
+## LLC tumour
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/tumours/LLC_tumours_scRNAseq.RData")
+
+LLC_tumour <- LLC_tumour_singlets
+
+rm(LLC_tumour_singlets, all_genes_LLC_tumour)
+```
+
+
+## B16 tumour
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/tumours/B16_tumours_scRNAseq.RData")
+
+B16_tumour <- B16_tumour_so_norm
+
+rm(B16_tumour_so_norm, all_genes_B16_tumour)
+```
+
+
+## MC38 (immune) tumour
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/tumours/MC38_tumours_immune_scRNAseq.RData")
+
+MC38_tumour <- MC38_tumour_singlets
+
+rm(MC38_tumour_singlets)
+```
+
+
+## KPC tumour
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/tumours/KPC_tumours_scRNAseq.RData")
+
+KPC_tumour <- KPC_combined
+
+rm(KPC_combined, all_genes_KPC_tumours)
+```
+
+
+
+# Integrate data
+
+## Merge
+
+```{r, include=FALSE}
+DefaultAssay(LLC_tumour) <- "RNA"
+DefaultAssay(B16_tumour) <- "RNA"
+DefaultAssay(MC38_tumour) <- "RNA"
+DefaultAssay(KPC_tumour) <- "RNA"
+
+LLC_tumour$experiment <- "LLC_tumour"
+B16_tumour$experiment <- "B16_tumour"
+MC38_tumour$experiment <- "MC38_tumour"
+KPC_tumour$experiment <- "KPC_tumour"
+
+tumours_combined <- merge(LLC_tumour, y = list(B16_tumour, MC38_tumour, KPC_tumour), add.cell.ids = c("LLC_tumour", "B16_tumour", "MC38_tumour", "KPC_tumour"))
+```
+
+
+## Pre-process
+
+
+```{r, include=FALSE}
+tumours_combined <- NormalizeData(tumours_combined) %>%
+  FindVariableFeatures() %>%
+  ScaleData() %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(tumours_combined, ndims = 50)
+```
+
+```{r, include=FALSE}
+tumours_combined <- tumours_combined %>%
+  FindNeighbors(dims = 1:39) %>%
+  FindClusters(resolution = 0.9)
+
+Idents(tumours_combined) <- "seurat_clusters"
+
+umap.method = 'umap-learn'
+metric = 'correlation'
+
+tumours_combined <- RunUMAP(tumours_combined, reduction = "pca", dims = 1:39)
+```
+
+
+## Visualize data sets prior to Harmony Integration
+
+```{r}
+DimPlot(tumours_combined, reduction = "umap", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+tumours_combined <- RunHarmony(tumours_combined, group.by.vars = "experiment")
+
+tumours_combined <- FindNeighbors(tumours_combined,reduction = "harmony", dims = 1:39) %>% 
+  FindClusters(resolution = 0.9)
+
+tumours_combined <- RunUMAP(tumours_combined, reduction = "harmony", dims = 1:39)
+```
+
+
+## Visualize data integration after harmony
+
+```{r}
+DimPlot(tumours_combined, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "HARMONY1", y = "HARMONY2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+```{r}
+DimPlot(tumours_combined, reduction = "umap", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+
+# Annotate clusters 
+
+```{r, include=FALSE}
+DefaultAssay(tumours_combined) <- "RNA"
+
+Idents(tumours_combined) <- tumours_combined$seurat_clusters
+tumours_combined <- JoinLayers(tumours_combined, what = "all")
+```
+
+
+## Specify clusters
+
+```{r, include=FALSE}
+tumours_combined_cluster_ids <- levels(tumours_combined$seurat_clusters)
+
+tumours_combined_cluster_labels <- c("Malignant cells", "Monocytes/macrophages", "Monocytes/macrophages", "Malignant cells", "Malignant cells", "Epithelial cells", "Malignant cells", "NK cells", "Malignant cells", "Epithelial cells", "Monocytes/macrophages", "Endothelial cells", "Endothelial cells", "Malignant cells", "NK cells", "NK cells", "T cells", "Cancer-associated fibroblasts", "Malignant cells", "Monocytes/macrophages", "Malignant cells", "NK cells", "Endothelial cells", "Neutrophils", "Monocytes/macrophages", "B cells")
+
+tumours_combined_clusters <- tumours_combined@meta.data$seurat_clusters
+
+tumours_combined$seurat_clusters <- tumours_combined_cluster_labels[tumours_combined$seurat_clusters]
+```
+
+
+## Order clusters
+
+```{r, include=FALSE}
+tumours_combined$seurat_clusters <- factor(tumours_combined$seurat_clusters, levels = c("Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells", "Epithelial cells"))
+```
+
+
+## Set cluster colours
+
+```{r, include=FALSE}
+cluster_colours <- c(
+    "Malignant cells"                = "#8A8A8A",
+    "Endothelial cells"              = "#D2B48C",
+    "Cancer-associated fibroblasts"  = "#7CFC00",
+    "Monocytes/macrophages"          = "#99CBFF",
+    "Neutrophils"                    = "#4169E1",
+    "B cells"                        = "#C9A2FF",
+    "T cells"                        = "#B44CFF",
+    "NK cells"                       = "#5B0E8A"
+)
+```
+
+
+## Dotplot showing highly expressed genes between clusters
+
+```{r}
+DefaultAssay(tumours_combined) <- "RNA"
+Idents(tumours_combined) <- "seurat_clusters"
+
+DotPlot(object = tumours_combined, features = c(
+  "Myc", "Igfbp4", "Rhox5", "Nedd4", # Malignant cells
+  "Cdh5", "Pecam1", "Igfbp3", "Igfbp7", # Endothelial cells
+  "Col1a1", "Col1a2", "Serping1", "Dcn", "Fn1", "Mmp13", "Timp1", # Cancer-associated fibroblasts
+  "Ptprc", # General immune cells
+  "Cd209a", "Itgam", "Ccr2", "Fabp5", "Ly6c1", "Ly6c2", # Monocytes
+  "Cd68", "Cd74", "Cd83", "Ccl6", "Ccl9", "C1qa", # Macrophages
+  "S100a8", "S100a9", "Retnlg", "Ifitm1", # Neutrophils
+  "Cd79a", # B cells
+  "Il7r", "Cd4", # T cells
+  "Nkg7", "Klra7", # NK cells
+  "Epcam", "Krt15" # Epithelial cells
+)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Remove Epithelial cells
+
+```{r, include=FALSE}
+epithelial_cells_removed <- "Epithelial cells"
+
+tumours_combined <- subset(tumours_combined, seurat_clusters != epithelial_cells_removed)
+```
+
+
+## Visualize clusters
+
+```{r}
+DimPlot(tumours_combined, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1, cols = cluster_colours) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+
+# Clean up tumour_combined seurat object
+
+```{r, include=FALSE}
+cols_to_remove <- c(
+  "RNA_snn_res.1.2",
+  "sample_name",
+  "Immune_Subclusters",
+  "integrated_snn_res.0.5",
+  "RNA_snn_res.0.9",
+  "RNA_snn_res.0.5",
+  "scDblFinder.class"
+)
+
+for (col in cols_to_remove) {
+  tumours_combined[[col]] <- NULL
+}
+
+tumours_combined@meta.data <- tumours_combined@meta.data[, c(
+  "experiment",
+  "orig.ident",
+  "seurat_clusters",
+  "nCount_RNA",
+  "nFeature_RNA",
+  "percent.mito"
+)]
+```
+
+
+## Change idents of B16F10, KPC, and MC38 tumours
+
+```{r, include=FALSE}
+tumours_combined$orig.ident[tumours_combined$orig.ident %in% "B16F10_tumours"] <- "B16F10 tumours"
+
+tumours_combined$orig.ident[tumours_combined$orig.ident %in% c("GC117164", "GC117165", "GC117166")] <- "MC38 tumours"
+
+tumours_combined$orig.ident[tumours_combined$orig.ident %in% c("GC117164", "GC117165", "GC117166")] <- "MC38 tumours"
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(B16_tumour, KPC_tumour, LLC_tumour, MC38_tumour, col, cols_to_remove, epithelial_cells_removed, metric, tumours_combined_cluster_ids, tumours_combined_cluster_labels, tumours_combined_clusters, umap.method)
+```

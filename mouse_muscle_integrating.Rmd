@@ -1,0 +1,2186 @@
+---
+title: "muscle_integrating"
+author: "Alex Brown"
+date: "2025-09-30"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(gridExtra)
+library(harmony)
+```
+
+
+
+# Load data
+
+## Agca_snLLC
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/muscle/Agca_snLLC_merged.RData")
+```
+
+
+## Brown_scLLC
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/muscle/Brown_scLLC_merged.RData")
+```
+
+
+## Kim_scB16F10
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/muscle/Kim_scB16F10_merged.RData")
+```
+
+
+## Pryce_scC26
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/muscle/Pryce_scC26_merged.RData")
+```
+
+
+## Pryce_scKPP
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/muscle/Pryce_scKPP_merged.RData")
+```
+
+
+## Zhang_snKIC
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/individual_dataset_processing/muscle/Zhang_snKIC_merged.RData")
+```
+
+
+
+# Integrate data
+
+## Merge
+```{r, include=FALSE}
+DefaultAssay(Agca_snLLC) <- "RNA"
+DefaultAssay(Brown_scLLC) <- "RNA"
+DefaultAssay(Kim_scB16F10) <- "RNA"
+DefaultAssay(Pryce_scC26) <- "RNA"
+DefaultAssay(Pryce_scKPP) <- "RNA"
+DefaultAssay(Zhang_snKIC) <- "RNA"
+
+Agca_snLLC$experiment <- "Agca_snLLC"
+Brown_scLLC$experiment <- "Brown_scLLC"
+Kim_scB16F10$experiment <- "Kim_scB16F10"
+Pryce_scC26$experiment <- "Pryce_scC26"
+Pryce_scKPP$experiment <- "Pryce_scKPP"
+Zhang_snKIC$experiment <- "Zhang_snKIC"
+
+sc_combined <- merge(Agca_snLLC, y = list(Brown_scLLC, Kim_scB16F10, Pryce_scC26, Pryce_scKPP, Zhang_snKIC), add.cell.ids = c("Agca_snLLC", "Brown_scLLC", "Kim_scB16F10", "Pryce_scC26", "Pryce_scKPP", "Zhang_snKIC"))
+
+rm(Agca_snLLC, Brown_scLLC, Kim_scB16F10, Pryce_scC26, Pryce_scKPP, Zhang_snKIC)
+```
+
+
+## Pre-process
+
+```{r, include=FALSE}
+sc_combined <- NormalizeData(sc_combined) %>%
+  FindVariableFeatures() %>%
+  ScaleData() %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(sc_combined, ndims = 50)
+```
+
+```{r, include=FALSE}
+sc_combined <- sc_combined %>%
+  FindNeighbors(dims = 1:40) %>%
+  FindClusters(resolution = 0.9)
+
+Idents(sc_combined) <- "seurat_clusters"
+
+umap.method = 'umap-learn'
+metric = 'correlation'
+
+sc_combined <- RunUMAP(sc_combined, reduction = "pca", dims = 1:40)
+```
+
+
+## Visualize data sets prior to Harmony Integration
+
+```{r}
+DimPlot(sc_combined, reduction = "umap", group.by = "experiment", repel = TRUE, pt.size = 1, raster = FALSE) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+sc_combined <- RunHarmony(sc_combined, group.by.vars = "experiment")
+
+sc_combined <- FindNeighbors(sc_combined,reduction = "harmony", dims = 1:40) %>% 
+  FindClusters(resolution = 0.9)
+
+sc_combined <- RunUMAP(sc_combined, reduction = "harmony", dims = 1:40)
+```
+
+
+## Visualize data integration after harmony
+
+```{r}
+DimPlot(sc_combined, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "HARMONY1", y = "HARMONY2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+```{r}
+DimPlot(sc_combined, reduction = "umap", group.by = "experiment", repel = TRUE, pt.size = 1, raster = FALSE) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+
+# Annotate clusters 
+
+```{r, include=FALSE}
+DefaultAssay(sc_combined) <- "RNA"
+
+Idents(sc_combined) <- sc_combined$seurat_clusters
+sc_combined <- JoinLayers(sc_combined, what = "all")
+
+DEGs_sc_combined <- FindAllMarkers(
+  object = sc_combined, group.by = "seurat_clusters", 
+  test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+
+## Specify clusters
+
+```{r, include=FALSE}
+sc_combined_cluster_ids <- levels(sc_combined$seurat_clusters)
+
+sc_combined_cluster_labels <- c("Endothelial cells", "FAPs", "FAPs", "Myonuclei", "B/T/NK cells", "B/T/NK cells", "Myonuclei", "Myonuclei", "Myonuclei", "Neutrophils", "Endothelial cells", "vSMCs/pericytes", "Monocytes/macrophages", "Satellite cells", "FAPs", "Monocytes/macrophages", "Epithelial cells", "FAPs", "Endothelial cells", "Endothelial cells", "Neutrophils", "vSMCs/pericytes", "Tenocytes", "Endothelial cells", "Erythrocytes", "Neutrophils", "Myonuclei", "Platelets", "Neural/glial/Schwann cells", "FAPs", "Myonuclei", "Myoblasts", "Endothelial cells", "Endothelial cells", "Myonuclei", "FAPs", "Erythrocytes", "vSMCs/pericytes", "Endothelial cells", "Adipocytes", "Monocytes/macrophages", "Neural/glial/Schwann cells")
+
+sc_combined_clusters <- sc_combined@meta.data$seurat_clusters
+
+sc_combined$seurat_clusters <- sc_combined_cluster_labels[sc_combined$seurat_clusters]
+```
+
+
+## Order clusters
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters, levels = c("Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs/pericytes", "FAPs", "Tenocytes", "Adipocytes", "Platelets", "Monocytes/macrophages", "Neutrophils", "B/T/NK cells", "Neural/glial/Schwann cells", "Erythrocytes", "Epithelial cells"))
+```
+
+
+## Cluster 8 is a mixed cluster
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "RNA_snn_res.0.9"
+
+cluster8 <- subset(sc_combined, idents = "8")
+
+cluster8 <- NormalizeData(cluster8)
+cluster8 <- FindVariableFeatures(cluster8, nfeatures = 2000)
+cluster8 <- ScaleData(cluster8)
+cluster8 <- RunPCA(cluster8, npcs = 50)
+```
+
+```{r}
+ElbowPlot(cluster8, ndims = 50)
+```
+
+```{r, include=FALSE}
+cluster8 <- FindNeighbors(cluster8,reduction = "harmony", dims = 1:41) %>% 
+  FindClusters(resolution = 0.9)
+
+cluster8 <- RunUMAP(cluster8, reduction = "harmony", dims = 1:41)
+```
+
+```{r, include=FALSE}
+DefaultAssay(cluster8) <- "RNA"
+
+Idents(cluster8) <- cluster8$seurat_clusters
+cluster8 <- JoinLayers(cluster8, what = "all")
+
+DEGs_cluster8 <- FindAllMarkers(
+  object = cluster8, group.by = "seurat_clusters", 
+  test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+write.csv(DEGs_cluster8, file = "DEGs_cluster8.csv")
+```
+
+```{r, include=FALSE}
+Idents(cluster8) <- "seurat_clusters"
+
+cluster8_cluster_labels <- c("FAPs", "FAPs", "FAPs", "Erythrocytes", "Adipocytes", "Myonuclei", "Myonuclei", "Erythrocytes", "Myonuclei", "FAPs", "FAPs", "Tenocytes", "Endothelial cells")
+
+cluster8_clusters <- cluster8@meta.data$seurat_clusters
+
+cluster8$seurat_clusters <- cluster8_cluster_labels[cluster8$seurat_clusters]
+```
+
+### Write new cluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters[Cells(cluster8)] <- cluster8$seurat_clusters
+
+rm(cluster8, DEGs_cluster8, cluster8_cluster_labels, cluster8_clusters)
+```
+
+
+## Split vSMCs and pericytes
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+vSMCs_pericytes <- subset(sc_combined, idents = "vSMCs/pericytes")
+
+vSMCs_pericytes <- NormalizeData(vSMCs_pericytes)
+vSMCs_pericytes <- FindVariableFeatures(vSMCs_pericytes, nfeatures = 2000)
+vSMCs_pericytes <- ScaleData(vSMCs_pericytes)
+vSMCs_pericytes <- RunPCA(vSMCs_pericytes, npcs = 50)
+```
+
+```{r}
+ElbowPlot(vSMCs_pericytes, ndims = 50)
+```
+
+```{r, include=FALSE}
+vSMCs_pericytes <- FindNeighbors(vSMCs_pericytes,reduction = "harmony", dims = 1:42) %>% 
+  FindClusters(resolution = 0.1)
+
+vSMCs_pericytes <- RunUMAP(vSMCs_pericytes, reduction = "harmony", dims = 1:42)
+```
+
+```{r, include=FALSE}
+DefaultAssay(vSMCs_pericytes) <- "RNA"
+
+Idents(vSMCs_pericytes) <- vSMCs_pericytes$seurat_clusters
+vSMCs_pericytes <- JoinLayers(vSMCs_pericytes, what = "all")
+
+DEGs_vSMCs_pericytes <- FindAllMarkers(
+  object = vSMCs_pericytes, group.by = "seurat_clusters", 
+  test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+write.csv(DEGs_vSMCs_pericytes, file = "DEGs_vSMCs_pericytes.csv")
+```
+
+```{r, include=FALSE}
+Idents(vSMCs_pericytes) <- "seurat_clusters"
+
+vSMCs_pericytes_cluster_labels <- c("Pericytes", "vSMCs", "Pericytes", "Mast cells", "vSMCs", "vSMCs")
+
+vSMCs_pericytes_clusters <- vSMCs_pericytes@meta.data$seurat_clusters
+
+vSMCs_pericytes$seurat_clusters <- vSMCs_pericytes_cluster_labels[vSMCs_pericytes$seurat_clusters]
+```
+
+### Write new cluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- as.character(sc_combined$seurat_clusters)
+
+sc_combined$seurat_clusters[Cells(vSMCs_pericytes)] <- 
+  as.character(vSMCs_pericytes$seurat_clusters)
+
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters)
+
+rm(vSMCs_pericytes, DEGs_vSMCs_pericytes, vSMCs_pericytes_cluster_labels, vSMCs_pericytes_clusters)
+```
+
+
+## Split Monocytes and macrophages
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+Monocytes_macrophages <- subset(sc_combined, idents = "Monocytes/macrophages")
+
+Monocytes_macrophages <- NormalizeData(Monocytes_macrophages)
+Monocytes_macrophages <- FindVariableFeatures(Monocytes_macrophages, nfeatures = 2000)
+Monocytes_macrophages <- ScaleData(Monocytes_macrophages)
+Monocytes_macrophages <- RunPCA(Monocytes_macrophages, npcs = 50)
+```
+
+```{r}
+ElbowPlot(Monocytes_macrophages, ndims = 50)
+```
+
+```{r, include=FALSE}
+Monocytes_macrophages <- FindNeighbors(Monocytes_macrophages,reduction = "harmony", dims = 1:47) %>% 
+  FindClusters(resolution = 0.1)
+
+Monocytes_macrophages <- RunUMAP(Monocytes_macrophages, reduction = "harmony", dims = 1:47)
+```
+
+```{r, include=FALSE}
+DefaultAssay(Monocytes_macrophages) <- "RNA"
+
+Idents(Monocytes_macrophages) <- Monocytes_macrophages$seurat_clusters
+Monocytes_macrophages <- JoinLayers(Monocytes_macrophages, what = "all")
+
+DEGs_Monocytes_macrophages <- FindAllMarkers(
+  object = Monocytes_macrophages, group.by = "seurat_clusters", 
+  test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+write.csv(DEGs_Monocytes_macrophages, file = "DEGs_Monocytes_macrophages.csv")
+```
+
+```{r, include=FALSE}
+Idents(Monocytes_macrophages) <- "seurat_clusters"
+
+Monocytes_macrophages_cluster_labels <- c("Monocytes/macrophages", "Monocytes/macrophages", "Mast cells", "Dendritic cells")
+
+Monocytes_macrophages_clusters <- Monocytes_macrophages@meta.data$seurat_clusters
+
+Monocytes_macrophages$seurat_clusters <- Monocytes_macrophages_cluster_labels[Monocytes_macrophages$seurat_clusters]
+```
+
+### Write new cluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- as.character(sc_combined$seurat_clusters)
+
+sc_combined$seurat_clusters[Cells(Monocytes_macrophages)] <- 
+  as.character(Monocytes_macrophages$seurat_clusters)
+
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters)
+
+rm(Monocytes_macrophages, DEGs_Monocytes_macrophages, Monocytes_macrophages_cluster_labels, Monocytes_macrophages_clusters)
+```
+
+
+## Split B/T/NK cells
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+B_T_NK_cells <- subset(sc_combined, idents = "B/T/NK cells")
+
+DefaultAssay(B_T_NK_cells) <- "RNA"
+
+B_T_NK_cells[["RNA"]]@layers <- B_T_NK_cells[["RNA"]]@layers[c("counts", "data")]
+
+B_T_NK_cells <- NormalizeData(B_T_NK_cells)
+B_T_NK_cells <- FindVariableFeatures(B_T_NK_cells, nfeatures = 2000)
+B_T_NK_cells <- ScaleData(B_T_NK_cells)
+B_T_NK_cells <- RunPCA(B_T_NK_cells, npcs = 50)
+```
+
+```{r}
+ElbowPlot(B_T_NK_cells, ndims = 50)
+```
+
+```{r, include=FALSE}
+B_T_NK_cells <- FindNeighbors(B_T_NK_cells,reduction = "harmony", dims = 1:42) %>% 
+  FindClusters(resolution = 0.3)
+
+B_T_NK_cells <- RunUMAP(B_T_NK_cells, reduction = "harmony", dims = 1:42)
+```
+
+```{r, include=FALSE}
+DefaultAssay(B_T_NK_cells) <- "RNA"
+
+Idents(B_T_NK_cells) <- B_T_NK_cells$seurat_clusters
+B_T_NK_cells <- JoinLayers(B_T_NK_cells, what = "all")
+
+DEGs_B_T_NK_cells <- FindAllMarkers(
+  object = B_T_NK_cells, group.by = "seurat_clusters", 
+  test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+write.csv(DEGs_B_T_NK_cells, file = "DEGs_B_T_NK_cells.csv")
+```
+
+```{r, include=FALSE}
+Idents(B_T_NK_cells) <- "seurat_clusters"
+
+B_T_NK_cells_cluster_labels <- c("T cells", "B cells", "B cells", "T cells", "B cells", "NK cells")
+
+B_T_NK_cells_clusters <- B_T_NK_cells@meta.data$seurat_clusters
+
+B_T_NK_cells$seurat_clusters <- B_T_NK_cells_cluster_labels[B_T_NK_cells$seurat_clusters]
+```
+
+### Write new cluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- as.character(sc_combined$seurat_clusters)
+
+sc_combined$seurat_clusters[Cells(B_T_NK_cells)] <- 
+  as.character(B_T_NK_cells$seurat_clusters)
+
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters)
+
+rm(B_T_NK_cells, DEGs_B_T_NK_cells, B_T_NK_cells_cluster_labels, B_T_NK_cells_clusters)
+```
+
+
+## Split Neural/glial and Schwann cells
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+Neural_glial_Schwann_cells <- subset(sc_combined, idents = "Neural/glial/Schwann cells")
+
+Neural_glial_Schwann_cells <- NormalizeData(Neural_glial_Schwann_cells)
+Neural_glial_Schwann_cells <- FindVariableFeatures(Neural_glial_Schwann_cells, nfeatures = 2000)
+Neural_glial_Schwann_cells <- ScaleData(Neural_glial_Schwann_cells)
+Neural_glial_Schwann_cells <- RunPCA(Neural_glial_Schwann_cells, npcs = 50)
+```
+
+```{r}
+ElbowPlot(Neural_glial_Schwann_cells, ndims = 50)
+```
+
+```{r, include=FALSE}
+Neural_glial_Schwann_cells <- FindNeighbors(Neural_glial_Schwann_cells,reduction = "harmony", dims = 1:36) %>% 
+  FindClusters(resolution = 0.1)
+
+Neural_glial_Schwann_cells <- RunUMAP(Neural_glial_Schwann_cells, reduction = "harmony", dims = 1:36)
+```
+
+```{r, include=FALSE}
+DefaultAssay(Neural_glial_Schwann_cells) <- "RNA"
+
+Idents(Neural_glial_Schwann_cells) <- Neural_glial_Schwann_cells$seurat_clusters
+Neural_glial_Schwann_cells <- JoinLayers(Neural_glial_Schwann_cells, what = "all")
+
+DEGs_Neural_glial_Schwann_cells <- FindAllMarkers(
+  object = Neural_glial_Schwann_cells, group.by = "seurat_clusters", 
+  test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+write.csv(DEGs_Neural_glial_Schwann_cells, file = "DEGs_Neural_glial_Schwann_cells.csv")
+```
+
+```{r, include=FALSE}
+Idents(Neural_glial_Schwann_cells) <- "seurat_clusters"
+
+Neural_glial_Schwann_cells_cluster_labels <- c("Schwann cells", "Neural/glial cells", "Schwann cells")
+
+Neural_glial_Schwann_cells_clusters <- Neural_glial_Schwann_cells@meta.data$seurat_clusters
+
+Neural_glial_Schwann_cells$seurat_clusters <- Neural_glial_Schwann_cells_cluster_labels[Neural_glial_Schwann_cells$seurat_clusters]
+```
+
+### Write new cluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- as.character(sc_combined$seurat_clusters)
+
+sc_combined$seurat_clusters[Cells(Neural_glial_Schwann_cells)] <- 
+  as.character(Neural_glial_Schwann_cells$seurat_clusters)
+
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters)
+
+rm(Neural_glial_Schwann_cells, DEGs_Neural_glial_Schwann_cells, Neural_glial_Schwann_cells_cluster_labels, Neural_glial_Schwann_cells_clusters)
+```
+
+
+## Order clusters again
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters, levels = c("Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Adipocytes", "Platelets", "Mast cells", "Dendritic cells", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells", "Neural/glial cells", "Schwann cells"))
+```
+
+
+## Run FindAllMarkers again
+
+```{r, include=FALSE}
+DefaultAssay(sc_combined) <- "RNA"
+
+Idents(sc_combined) <- sc_combined$seurat_clusters
+sc_combined <- JoinLayers(sc_combined, what = "all")
+DEGs_sc_combined <- FindAllMarkers(object = sc_combined, group.by = "seurat_clusters", test.use = "LR", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r, include=FALSE}
+write.csv(DEGs_sc_combined, file = "DEGs_sc_combined_clusters.csv", row.names = FALSE)
+```
+
+
+
+# Order experiments
+
+```{r, include=FALSE}
+sc_combined$experiment <- factor(sc_combined$experiment, levels = c("Agca_snLLC", "Brown_scLLC", "Kim_scB16F10", "Pryce_scC26", "Pryce_scKPP", "Zhang_snKIC"))
+```
+
+
+
+# Order samples
+
+```{r, include=FALSE}
+sc_combined$orig.ident <- factor(sc_combined$orig.ident, levels = c("Agca_snLLC_CTL", "Agca_snLLC_LLC", "Brown_scLLC_CTL", "Brown_scLLC_2w",  
+"Brown_scLLC_2.5w", "Brown_scLLC_3.5w", "Kim_scB16F10_CTL", "Kim_scB16F10_B16F10", "Pryce_scC26_CTL",  "Pryce_scC26_C26",  "Pryce_scKPP_CTL",  "Pryce_scKPP_KPP", "Zhang_snKIC_CTL",  "Zhang_snKIC_KIC" ))
+```
+
+
+
+# Visualize
+
+## UMAP by experiment
+
+```{r}
+DimPlot(sc_combined, reduction = "umap", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## UMAP plot highlighting certain experiments
+
+```{r}
+DimPlot(
+  sc_combined,
+  reduction = "umap",
+  group.by = "experiment",
+  cells.highlight = list("#experiment_name#" = WhichCells(sc_combined, expression = experiment == "#experiment_name#")),
+  sizes.highlight = 1,
+  pt.size = 1,
+  cols.highlight = "#COLOUR_HEX_CODE"
+) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()) +
+  theme(legend.position = "none")
+```
+
+
+## UMAP by sample
+
+```{r}
+DimPlot(sc_combined, reduction = "umap", group.by = "orig.ident", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## UMAP plot highlighting certain samples
+
+```{r}
+DimPlot(
+  sc_combined,
+  reduction = "umap",
+  group.by = "orig.ident",
+  cells.highlight = list("#sample_name#" = WhichCells(sc_combined, expression = orig.ident == "#sample_name#")),
+  sizes.highlight = 1,
+  pt.size = 1,
+  cols.highlight = "#COLOUR_HEX_CODE"
+) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()) +
+  theme(legend.position = "none")
+```
+
+
+## UMAP by cluster
+
+```{r}
+DimPlot(sc_combined, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## UMAP plot highlighting certain clusters
+
+```{r}
+DimPlot(
+  sc_combined,
+  reduction = "umap",
+  group.by = "seurat_clusters",
+  cells.highlight = list("#cluster_name#" = WhichCells(sc_combined, expression = seurat_clusters == "#cluster_name#")),
+  sizes.highlight = 1,
+  pt.size = 1,
+  cols.highlight = "#COLOUR_HEX_CODE"
+) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()) +
+  theme(legend.position = "none")
+```
+
+
+## DotPlot to show differentially expressed genes between clusters
+
+```{r}
+DefaultAssay(sc_combined) <- "RNA"
+Idents(sc_combined) <- "seurat_clusters"
+
+DotPlot(object = sc_combined, features = c(
+  "Pax7", "Myf5", # MuSCs
+  "Myod1", "Myog", # Myoblast
+  "Acta1", # Myonuclei 
+    "Myh7", ## TI 
+    "Myh2", ## TIIa 
+    "Myh4", ## TIIb 
+    "Myh1", ## TIIx
+  "Cdh5", "Pecam1", # Endothelial cells 
+    "Fmo1", "Fmo2", ## capillary venous
+    "Apln", ## angiogenic
+  "Myl9", "Pdgfrb", ## vSMCs/pericytes
+  "Pdgfra", # FAPs
+    "Cd34", "Dpp4", "Pi16", ## stem FAPs
+    "Mme", "Mmp2", "Col3a1", ## pro-remodeling
+    "Dcn", ## fibroblast
+  "Tnmd", # Tenocytes
+  "Mmrn1", "Ccl21a", ## platelet
+    "Cpa3", "Tpsb2", ## mast cells
+    "Fscn1", "Flt3", ## dendritic cells
+    "Itgam", "Ccr2", "Fabp5", "Cx3cr1", "Ly6c1", "Ly6c2", ## monocytes
+      "Cd68", "Cd74", "Cd83", ### macrophages
+      "Ccl6", "Ccl9", #### pro-inflammatory macrophage
+      "C1qa", #### anti-inflammatory macrophage
+    "S100a8", "S100a9", ## neutrophils
+    "Ms4a1", "Cd79a", # B cell
+    "Il7r", "Cd4", "Cd8a", "Cd27",  # T cell
+    "Nkg7", "Klra7", # NK cell
+  "Ptn", "Cdh19", "Mpz", "S100b", ### Neural/glial/Schwann cells
+  "Gypa", "Hba-a2", ### Erythrocytes
+  "Krt15", "Epcam" ### Epithelial cells
+  )) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+
+# Clean up sc_combined seurat object
+
+```{r, include=FALSE}
+sc_combined$RNA_snn_res.0.1 <- NULL
+sc_combined$scDblFinder.class <- NULL
+
+sc_combined$orig.clusters.res.0.9 <- sc_combined$RNA_snn_res.0.9
+sc_combined$RNA_snn_res.0.9 <- NULL
+
+sc_combined@meta.data <- sc_combined@meta.data[, c(
+  "experiment",
+  "orig.ident",
+  "seurat_clusters",
+  "orig.clusters.res.0.9",
+  "nCount_RNA",
+  "nFeature_RNA",
+  "percent.mito"
+)]
+```
+
+
+# SUBCLUSTER ANALYSES!!!
+
+
+
+# Satellite cells
+
+## Subset satellite_cells
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+all_genes <- rownames(sc_combined)
+
+satellite_cells <- subset(sc_combined, idents = "Satellite cells")
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+satellite_cells[["RNA"]]@layers <- satellite_cells[["RNA"]]@layers[c("counts", "data")]
+
+satellite_cells <- NormalizeData(satellite_cells) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(satellite_cells)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(satellite_cells, ndims = 50)
+```
+
+
+## Run harmony
+
+### When we do this without running harmony, the cells cluster by experiment
+
+```{r, include=FALSE}
+satellite_cells <- RunHarmony(satellite_cells, group.by.vars = "experiment", theta = 4)
+
+satellite_cells <- FindNeighbors(satellite_cells,reduction = "harmony",
+                                dims = 1:31) %>% 
+  FindClusters(resolution = 0.9)
+
+satellite_cells <- RunUMAP(satellite_cells, reduction = "harmony", dims = 1:31)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(satellite_cells, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(satellite_cells) <- "RNA"
+
+Idents(satellite_cells) <- satellite_cells$seurat_clusters
+satellite_cells <- JoinLayers(satellite_cells, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+satellite_cells_cluster_ids <- levels(satellite_cells$seurat_clusters)
+
+satellite_cells_cluster_labels <- c("Quiescent SCs", "Cachexia-associated SCs", "Activated SCs", "Quiescent SCs", "Activated SCs", "Pro-angiogenic SCs", "Erythrocytes")
+
+satellite_cells_clusters <- satellite_cells@meta.data$seurat_clusters
+
+satellite_cells$seurat_clusters <- satellite_cells_cluster_labels[satellite_cells$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+satellite_cells$seurat_clusters <- factor(satellite_cells$seurat_clusters, levels = c("Quiescent SCs", "Activated SCs", "Cachexia-associated SCs", "Pro-angiogenic SCs", "Erythrocytes"))
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+satellite_cells_cluster_ids <- levels(satellite_cells$seurat_clusters)
+Idents(satellite_cells) <- "seurat_clusters"
+
+VlnPlot_Pax7 <- VlnPlot(satellite_cells, features = "Pax7", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Pax7")
+VlnPlot_Chodl <- VlnPlot(satellite_cells, features = "Chodl", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Chodl")
+VlnPlot_Lgals1 <- VlnPlot(satellite_cells, features = "Lgals1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Lgals1")
+VlnPlot_Myod1 <- VlnPlot(satellite_cells, features = "Myod1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myod1")
+VlnPlot_Cebpb <- VlnPlot(satellite_cells, features = "Cebpb", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Cebpb")
+VlnPlot_Socs3 <- VlnPlot(satellite_cells, features = "Socs3", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Socs3")
+VlnPlot_Fabp4 <- VlnPlot(satellite_cells, features = "Fabp4", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Fabp4")
+VlnPlot_Flt1 <- VlnPlot(satellite_cells, features = "Flt1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Flt1")
+
+grid.arrange(VlnPlot_Pax7, VlnPlot_Chodl, VlnPlot_Lgals1, VlnPlot_Myod1, VlnPlot_Cebpb, VlnPlot_Socs3, VlnPlot_Fabp4, VlnPlot_Flt1, nrow = 2, ncol = 4)
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(satellite_cells, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster <- NA
+
+sc_combined$subcluster[Cells(satellite_cells)] <- as.character(satellite_cells$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(satellite_cells, VlnPlot_Cebpb, VlnPlot_Chodl, VlnPlot_Fabp4, VlnPlot_Flt1, VlnPlot_Lgals1, VlnPlot_Myod1, VlnPlot_Pax7, VlnPlot_Socs3, satellite_cells_cluster_ids, satellite_cells_cluster_labels, satellite_cells_clusters)
+```
+
+
+
+# Myoblasts
+
+## Subset Myoblasts
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+Myoblasts <- subset(sc_combined, idents = "Myoblasts")
+
+Myoblasts$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+Myoblasts[["RNA"]]@layers <- Myoblasts[["RNA"]]@layers[c("counts", "data")]
+
+Myoblasts <- NormalizeData(Myoblasts) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(Myoblasts)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(Myoblasts, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+Myoblasts <- RunHarmony(Myoblasts, group.by.vars = "experiment", theta = 4)
+
+Myoblasts <- FindNeighbors(Myoblasts,reduction = "harmony",
+                                dims = 1:37) %>% 
+  FindClusters(resolution = 0.9)
+
+Myoblasts <- RunUMAP(Myoblasts, reduction = "harmony", dims = 1:37)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(Myoblasts, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(Myoblasts) <- "RNA"
+
+Idents(Myoblasts) <- Myoblasts$seurat_clusters
+Myoblasts <- JoinLayers(Myoblasts, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+Myoblasts_cluster_ids <- levels(Myoblasts$seurat_clusters)
+
+Myoblasts_cluster_labels <- c("Committed myoblasts", "Differentiating myoblasts (2b)", "Committed myoblasts", "Differentiating myoblasts (2b)", "Differentiating myoblasts (2x)", "Differentiating myoblasts (2b/x)")
+
+Myoblasts_clusters <- Myoblasts@meta.data$seurat_clusters
+
+Myoblasts$seurat_clusters <- Myoblasts_cluster_labels[Myoblasts$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+Myoblasts$seurat_clusters <- factor(Myoblasts$seurat_clusters, levels = c("Committed myoblasts", "Differentiating myoblasts (2b)", "Differentiating myoblasts (2b/x)", "Differentiating myoblasst (2x)"))
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+Myoblasts_cluster_ids <- levels(Myoblasts$seurat_clusters)
+Idents(Myoblasts) <- "seurat_clusters"
+
+VlnPlot_Pax7 <- VlnPlot(Myoblasts, features = "Pax7", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Pax7")
+
+VlnPlot_Myod1 <- VlnPlot(Myoblasts, features = "Myod1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myod1")
+
+VlnPlot_Myog <- VlnPlot(Myoblasts, features = "Myog", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myog")
+
+VlnPlot_Acta1 <- VlnPlot(Myoblasts, features = "Acta1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Acta1")
+
+VlnPlot_Myh7 <- VlnPlot(Myoblasts, features = "Myh7", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh7")
+
+VlnPlot_Myh2 <- VlnPlot(Myoblasts, features = "Myh2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh2")
+
+VlnPlot_Myh1 <- VlnPlot(Myoblasts, features = "Myh1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh1")
+
+VlnPlot_Myh4 <- VlnPlot(Myoblasts, features = "Myh4", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh4")
+
+grid.arrange(VlnPlot_Pax7, VlnPlot_Myod1, VlnPlot_Myog, VlnPlot_Acta1, VlnPlot_Myh7, VlnPlot_Myh2, VlnPlot_Myh1, VlnPlot_Myh4, nrow = 2, ncol = 4)
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(Myoblasts, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[Cells(Myoblasts)] <- as.character(Myoblasts$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(Myoblasts, VlnPlot_Pax7, VlnPlot_Myod1, VlnPlot_Myog, VlnPlot_Acta1, VlnPlot_Myh7, VlnPlot_Myh2, VlnPlot_Myh4, VlnPlot_Myh1, Myoblasts_cluster_ids, Myoblasts_cluster_labels, Myoblasts_clusters)
+```
+
+
+
+# FAPs
+
+## Subset FAPs
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+FAPs <- subset(sc_combined, idents = "FAPs")
+
+FAPs$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+FAPs[["RNA"]]@layers <- FAPs[["RNA"]]@layers[c("counts", "data")]
+
+FAPs <- NormalizeData(FAPs) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(FAPs)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(FAPs, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+FAPs <- RunHarmony(FAPs, group.by.vars = "experiment", theta = 4)
+
+FAPs <- FindNeighbors(FAPs,reduction = "harmony",
+                                dims = 1:43) %>% 
+  FindClusters(resolution = 0.9)
+
+FAPs <- RunUMAP(FAPs, reduction = "harmony", dims = 1:43)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(FAPs, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(FAPs) <- "RNA"
+
+Idents(FAPs) <- FAPs$seurat_clusters
+FAPs <- JoinLayers(FAPs, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+FAPs_cluster_ids <- levels(FAPs$seurat_clusters)
+
+FAPs_cluster_labels <- c("Pro-remodeling FAPs", "Pro-remodeling FAPs", "Immuno FAPs", "Erythrocytes", "Pro-angiogenic FAPs", "Stem FAPs", "Pro-adipogenic FAPs", "Stem FAPs", "Pro-adipogenic FAPs", "Pro-adipogenic FAPs", "Stem FAPs", "Immuno FAPs", "Pro-adipogenic FAPs", "Pro-remodeling FAPs", "Activated FAPs", "Activated FAPs", "Epithelial cells", "Tenm2+ FAPs", "Pro-remodeling FAPs", "Tenm2+ FAPs", "Monocytes/macrophages", "Pro-remodeling FAPs", "Pro-angiogenic FAPs")
+
+FAPs_clusters <- FAPs@meta.data$seurat_clusters
+
+FAPs$seurat_clusters <- FAPs_cluster_labels[FAPs$seurat_clusters]
+```
+
+### NOTE - Erythrocyte cluster is a mix of erythrocytes, myonuclei and FAPs. Even though there are quite a few, I am going to remove this subcluster because I do not want to cluster AGAIN (worried about removing real biological features).
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+FAPs$seurat_clusters <- factor(FAPs$seurat_clusters, levels = c("Stem FAPs", "Activated FAPs", "Pro-remodeling FAPs", "Pro-angiogenic FAPs", "Pro-adipogenic FAPs", "Immuno FAPs", "Tenm2+ FAPs", "Monocytes/macrophages","Erythrocytes", "Epithelial cells"))
+```
+
+
+## Add Monocytes/macrophages back to  Monocytes/macrophages cluster and remove from FAPs
+
+```{r, include=FALSE}
+Idents(FAPs) <- "seurat_clusters"
+
+monocytes_macrophages <- colnames(FAPs)[FAPs$seurat_clusters == "Monocytes/macrophages"]
+
+sc_combined$seurat_clusters[monocytes_macrophages] <- "Monocytes/macrophages"
+
+FAPs <- subset(FAPs, cells = setdiff(colnames(FAPs), monocytes_macrophages))
+
+rm(monocytes_macrophages)
+```
+
+### NOTE - If there are any questions as to whether or not these are monocyte/macrophages, do a violin plot for Cd74. If there are questions about erythrocytes, do Hba-a2, and for epithelial cells do Krt15.
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+FAPs_cluster_ids <- levels(FAPs$seurat_clusters)
+Idents(FAPs) <- "seurat_clusters"
+
+DotPlot(object = FAPs,features = c("Dpp4", "Pi16", "Postn", "Timp1", "Mme", "Cxcl14", "Cdh5", "Egfl7", "Gsn","Bgn", "Igfbp3", "Osmr", "Il6", "Ccl7", "Cebpb", "Tenm2", "Tnnc2", "Ptprc", "Krt15")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(FAPs, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[names(FAPs$seurat_clusters)] <- 
+  as.character(FAPs$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(FAPs, FAPs_cluster_ids, FAPs_cluster_labels, FAPs_clusters)
+```
+
+
+
+# B cells
+
+## Subset B cells
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+b_cells <- subset(sc_combined, idents = "B cells")
+
+b_cells$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+b_cells[["RNA"]]@layers <- b_cells[["RNA"]]@layers[c("counts", "data")]
+
+b_cells <- NormalizeData(b_cells) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(b_cells)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(b_cells, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+b_cells <- RunHarmony(b_cells, group.by.vars = "experiment", theta = 4)
+
+b_cells <- FindNeighbors(b_cells,reduction = "harmony",
+                                dims = 1:31) %>% 
+  FindClusters(resolution = 0.3)
+
+b_cells <- RunUMAP(b_cells, reduction = "harmony", dims = 1:31)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(b_cells, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(b_cells) <- "RNA"
+
+Idents(b_cells) <- b_cells$seurat_clusters
+b_cells <- JoinLayers(b_cells, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+b_cells_cluster_ids <- levels(b_cells$seurat_clusters)
+
+b_cells_cluster_labels <- c("Naive B cells", "Naive B cells", "Immature B cells", "Immature B cells", "Neutrophils", "Immature B cells", "Mast cells", "Regulatory B cells", "Regulatory B cells", "Plasma cells", "Pro-B cells")
+
+b_cells_clusters <- b_cells@meta.data$seurat_clusters
+
+b_cells$seurat_clusters <- b_cells_cluster_labels[b_cells$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+b_cells$seurat_clusters <- factor(b_cells$seurat_clusters, levels = c("Pro-B cells", "Naive B cells", "Immature B cells", "Regulatory B cells", "Plasma cells", "Mast cells", "Neutrophils"))
+```
+
+
+## Add Mast cells back to Mast cells cluster and remove from B cells
+
+```{r, include=FALSE}
+Idents(b_cells) <- "seurat_clusters"
+
+mast_cells <- colnames(b_cells)[b_cells$seurat_clusters == "Mast cells"]
+
+sc_combined$seurat_clusters[mast_cells] <- "Mast cells"
+
+b_cells <- subset(b_cells, cells = setdiff(colnames(b_cells), mast_cells))
+
+rm(mast_cells)
+```
+
+### NOTE - If there are any questions as to whether or not these are mast cells, do a violin plot for Cpa3.
+
+
+## Add Neutrophils back to Neutrophils cluster and remove from B cells
+
+```{r, include=FALSE}
+Idents(b_cells) <- "seurat_clusters"
+
+neutrophils <- colnames(b_cells)[b_cells$seurat_clusters == "Neutrophils"]
+
+sc_combined$seurat_clusters[neutrophils] <- "Neutrophils"
+
+b_cells <- subset(b_cells, cells = setdiff(colnames(b_cells), neutrophils))
+
+rm(neutrophils)
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+b_cells_cluster_ids <- levels(b_cells$seurat_clusters)
+Idents(b_cells) <- "seurat_clusters"
+
+DotPlot(object = b_cells, features = c(
+  "Cd19", "Cd79a", "Cd79b", ## Pan B cells
+  "Rag1", "Rag2", "Sox4", "Dntt", "Vpreb1", "Igll1", ## Pro-B cells
+    "Ighm", "Ighd", "Ms4a1", "Fcer2a", ## Naive B cells
+  "Btk", "Pax5", "Lef1", "Ebf1", ## Immature B cells
+  "Sell", "Cxcr5", "Zbtb20", "Bcl2", "Foxo1", "Mzb1", ## Regulatory B cells
+  "Jchain", "Xbp1", "Hsp90b1", ## Plasma cells
+  "Cpa3", "Tpsb2", ## Mast cells
+  "S100a8", "S100a9" ## Neutrophils
+)) +
+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic")) +
+scale_color_gradientn(colors = c("red", "white", "blue"))
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(b_cells, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[names(b_cells$seurat_clusters)] <- 
+  as.character(b_cells$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(b_cells, b_cells_cluster_ids, b_cells_cluster_labels, b_cells_clusters)
+```
+
+
+
+# Monocytes/macrophages
+
+## Subset Macrophages
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+monocytes_macrophages <- subset(sc_combined, idents = "Monocytes/macrophages")
+
+monocytes_macrophages$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+monocytes_macrophages[["RNA"]]@layers <- monocytes_macrophages[["RNA"]]@layers[c("counts", "data")]
+
+monocytes_macrophages <- NormalizeData(monocytes_macrophages) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(monocytes_macrophages)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(monocytes_macrophages, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+monocytes_macrophages <- RunHarmony(monocytes_macrophages, group.by.vars = "experiment", theta = 4)
+
+monocytes_macrophages <- FindNeighbors(monocytes_macrophages,reduction = "harmony", dims = 1:42) %>% 
+  FindClusters(resolution = 0.9)
+
+monocytes_macrophages <- RunUMAP(monocytes_macrophages, reduction = "harmony", dims = 1:42)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(monocytes_macrophages, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(monocytes_macrophages) <- "RNA"
+
+Idents(monocytes_macrophages) <- monocytes_macrophages$seurat_clusters
+monocytes_macrophages <- JoinLayers(monocytes_macrophages, what = "all")
+```
+
+
+## Specify subclusters
+
+```{r, include=FALSE}
+monocytes_macrophages_cluster_ids <- levels(monocytes_macrophages$seurat_clusters)
+
+monocytes_macrophages_cluster_labels <- c("M2 macrophages", "M2 macrophages", "Patrolling monocytes", "M1/M2 macrophages", "M1 macrophages", "M2 macrophages", "Inflammatory monocytes", "M2 macrophages", "M1/M2 macrophages", "Patrolling monocytes", "Inflammatory monocytes", "Myonuclei", "Patrolling monocytes", "Inflammatory monocytes", "Dendritic cells", "Patrolling monocytes")
+
+monocytes_macrophages_clusters <- monocytes_macrophages@meta.data$seurat_clusters
+
+monocytes_macrophages$seurat_clusters <- monocytes_macrophages_cluster_labels[monocytes_macrophages$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+monocytes_macrophages$seurat_clusters <- factor(monocytes_macrophages$seurat_clusters, levels = c("Patrolling monocytes", "Inflammatory monocytes", "M1 macrophages", "M1/M2 macrophages", "M2 macrophages", "Myonuclei", "Dendritic cells"))
+```
+
+
+## Add Myonuclei back to Myonuclei cluster and remove from Monocytes/macrophages
+
+```{r, include=FALSE}
+Idents(monocytes_macrophages) <- "seurat_clusters"
+
+myonuclei_cells <- colnames(monocytes_macrophages)[monocytes_macrophages$seurat_clusters == "Myonuclei"]
+
+sc_combined$seurat_clusters[myonuclei_cells] <- "Myonuclei"
+
+monocytes_macrophages <- subset(monocytes_macrophages, cells = setdiff(colnames(monocytes_macrophages), myonuclei_cells))
+
+rm(myonuclei_cells)
+```
+### NOTE - If there are any questions as to whether or not these are myonuclei, do a violin plot for Acta1 and Tnnc2.
+
+
+## Add Dendritic cells back to Dendritic cell cluster and remove from Monocytes/macrophages
+
+```{r, include=FALSE}
+Idents(monocytes_macrophages) <- "seurat_clusters"
+
+dendritic_cells <- colnames(monocytes_macrophages)[monocytes_macrophages$seurat_clusters == "Dendritic cells"]
+
+sc_combined$seurat_clusters[dendritic_cells] <- "Dendritic cells"
+
+monocytes_macrophages <- subset(monocytes_macrophages, cells = setdiff(colnames(monocytes_macrophages), dendritic_cells))
+
+rm(dendritic_cells)
+```
+### NOTE - If there are any questions as to whether or not these are dendritic cells, do a violin plot for Flt3.
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+monocytes_macrophages_cluster_ids <- levels(monocytes_macrophages$seurat_clusters)
+Idents(monocytes_macrophages) <- "seurat_clusters"
+
+DotPlot(object = monocytes_macrophages, features = c(
+  "Ctss", "Fabp5", "Ctsz", "Ctsl", "Ctsb", "Ctsa", ## patrolling monocytes
+  "Tgfbi", "Itgam", "Ccr2", "Cx3cr1", "Ly6c2", ## inflammatory monocytes
+  "Cd68", "Cd74", "Cd83", ### macrophages
+  "Ccl6", "Ccl9", #### pro-inflammatory macrophage
+  "C1qa", "Csf1r", "Fcgr3", "Mapk14", #### anti-inflammatory macrophage
+  "Tnnc2", # Myonuclei
+  "Fscn1", "Flt3" # Dendritic cells
+  )) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(monocytes_macrophages, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[names(monocytes_macrophages$seurat_clusters)] <- 
+  as.character(monocytes_macrophages$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(monocytes_macrophages, monocytes_macrophages_cluster_ids, monocytes_macrophages_cluster_labels, monocytes_macrophages_clusters)
+```
+
+
+
+# T cells
+
+## Subset T cells
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+t_cells <- subset(sc_combined, idents = "T cells")
+
+t_cells$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+t_cells[["RNA"]]@layers <- t_cells[["RNA"]]@layers[c("counts", "data")]
+
+t_cells <- NormalizeData(t_cells) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(t_cells)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(t_cells, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+t_cells <- RunHarmony(t_cells, group.by.vars = "experiment", theta = 4)
+
+t_cells <- FindNeighbors(t_cells,reduction = "harmony",
+                                dims = 1:35) %>% 
+  FindClusters(resolution = 0.1)
+
+t_cells <- RunUMAP(t_cells, reduction = "harmony", dims = 1:35)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(t_cells, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(t_cells) <- "RNA"
+
+Idents(t_cells) <- t_cells$seurat_clusters
+t_cells <- JoinLayers(t_cells, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+t_cells_cluster_ids <- levels(t_cells$seurat_clusters)
+
+t_cells_cluster_labels <- c( "Naive T cells", "Naive T cells", "Cytotoxic T cells", "Myonuclei", "Naive T cells")
+
+t_cells_clusters <- t_cells@meta.data$seurat_clusters
+
+t_cells$seurat_clusters <- t_cells_cluster_labels[t_cells$seurat_clusters]
+```
+
+### NOTE - the last cluster was initially described as endothelial cells, but when running violin plots for Cdh5 and Pecam1 they do not appear to be so. The seem to be more in line with Naive T cell markers!
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+t_cells$seurat_clusters <- factor(t_cells$seurat_clusters, levels = c("Naive T cells", "Cytotoxic T cells", "Myonuclei"))
+```
+
+
+## Add Myonuclei back to Myonuclei cluster and remove from T cells and from sc_combined (they are a myonuclei/T cell cluster)
+
+```{r, include=FALSE}
+Idents(t_cells) <- "seurat_clusters"
+
+### Identify myonuclei in T cell cluster
+myonuclei_cells <- colnames(t_cells)[t_cells$seurat_clusters == "Myonuclei"]
+
+### Classify T cell subcluster as Myonuclei
+sc_combined$subcluster[myonuclei_cells] <- "Myonuclei"
+
+### Remove T cells with Myonuclei subcluster
+tcell_myonuclei_cells <- colnames(sc_combined)[
+  sc_combined$subcluster == "Myonuclei" & sc_combined$seurat_clusters == "T cells"
+]
+
+sc_combined <- subset(sc_combined, cells = setdiff(colnames(sc_combined), tcell_myonuclei_cells))
+
+### Remove from T cells
+t_cells <- subset(t_cells, cells = setdiff(colnames(t_cells), myonuclei_cells))
+
+rm(myonuclei_cells, tcell_myonuclei_cells)
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+t_cells_cluster_ids <- levels(t_cells$seurat_clusters)
+Idents(t_cells) <- "seurat_clusters"
+
+DotPlot(object = t_cells, features = c(
+  "Cd3e", ## Pan T cells
+  "Ccr7", "Klf2", "Il7r", "Cd44", ## Naive (Cd44-) or memory
+  "Ccl5", "Nkg7", "Ctsw", "Klrd1" ## Cytotoxic T cells
+  )) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, face = "italic")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(t_cells, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[names(t_cells$seurat_clusters)] <- 
+  as.character(t_cells$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(t_cells, t_cells_cluster_ids, t_cells_cluster_labels, t_cells_clusters)
+```
+
+
+
+# Myonuclei
+
+## Subset Myonuclei
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+Myonuclei <- subset(sc_combined, idents = "Myonuclei")
+
+Myonuclei$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+Myonuclei[["RNA"]]@layers <- Myonuclei[["RNA"]]@layers[c("counts", "data")]
+
+Myonuclei <- NormalizeData(Myonuclei) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(Myonuclei)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(Myonuclei, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+Myonuclei <- RunHarmony(Myonuclei, group.by.vars = "experiment", theta = 4)
+
+Myonuclei <- FindNeighbors(Myonuclei,reduction = "harmony",
+                                dims = 1:36) %>% 
+  FindClusters(resolution = 0.9)
+
+Myonuclei <- RunUMAP(Myonuclei, reduction = "harmony", dims = 1:36)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(Myonuclei, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(Myonuclei) <- "RNA"
+
+Idents(Myonuclei) <- Myonuclei$seurat_clusters
+Myonuclei <- JoinLayers(Myonuclei, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+Myonuclei_cluster_ids <- levels(Myonuclei$seurat_clusters)
+
+Myonuclei_cluster_labels <- c("Type 2b/x myonuclei", "Type 2b myonuclei", "Type 2x myonuclei", "Type 2b/x myonuclei", "Type 2a/x myonuclei", "Type 2b myonuclei", "Type 2b myonuclei", "Type 2b myonuclei", "Type 2b myonuclei", "Type 2a/x myonuclei", "Type 2b/x myonuclei", "Type 1 myonuclei", "Type 2b myonuclei", "Type 2b myonuclei", "Type 2b/x myonuclei", "Type 2b myonuclei", "Type 2b myonuclei", "Type 2b/x myonuclei")
+
+Myonuclei_clusters <- Myonuclei@meta.data$seurat_clusters
+
+Myonuclei$seurat_clusters <- Myonuclei_cluster_labels[Myonuclei$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+Myonuclei$seurat_clusters <- factor(Myonuclei$seurat_clusters, levels = c("Type 1 myonuclei", "Type 2a/x myonuclei", "Type 2x myonuclei", "Type 2b/x myonuclei", "Type 2b myonuclei"))
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+Myonuclei_cluster_ids <- levels(Myonuclei$seurat_clusters)
+Idents(Myonuclei) <- "seurat_clusters"
+
+VlnPlot_Acta1 <- VlnPlot(Myonuclei, features = "Acta1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Acta1")
+
+VlnPlot_Myh7 <- VlnPlot(Myonuclei, features = "Myh7", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh7")
+
+VlnPlot_Myh2 <- VlnPlot(Myonuclei, features = "Myh2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh2")
+
+VlnPlot_Myh1 <- VlnPlot(Myonuclei, features = "Myh1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh1")
+
+VlnPlot_Myh4 <- VlnPlot(Myonuclei, features = "Myh4", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), plot.title = element_text(face = "italic")) +
+  labs(x = NULL, y = "Expression", title = "Myh4")
+
+grid.arrange(VlnPlot_Acta1, VlnPlot_Myh7, VlnPlot_Myh2, VlnPlot_Myh1, VlnPlot_Myh4, nrow = 1, ncol = 5)
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(Myonuclei, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[Cells(Myonuclei)] <- as.character(Myonuclei$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(Myonuclei, VlnPlot_Acta1, VlnPlot_Myh7, VlnPlot_Myh2, VlnPlot_Myh4, VlnPlot_Myh1, Myonuclei_cluster_ids, Myonuclei_cluster_labels, Myonuclei_clusters)
+```
+
+
+
+
+# Endothelial cells
+
+## Subset Endothelial cells
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+endothelial_cells <- subset(sc_combined, idents = "Endothelial cells")
+
+endothelial_cells$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+endothelial_cells[["RNA"]]@layers <- endothelial_cells[["RNA"]]@layers[c("counts", "data")]
+
+endothelial_cells <- NormalizeData(endothelial_cells) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(endothelial_cells)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(endothelial_cells, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+endothelial_cells <- RunHarmony(endothelial_cells, group.by.vars = "experiment", theta = 4)
+
+endothelial_cells <- FindNeighbors(endothelial_cells,reduction = "harmony",
+                                dims = 1:40) %>% 
+  FindClusters(resolution = 0.9)
+
+endothelial_cells <- RunUMAP(endothelial_cells, reduction = "harmony", dims = 1:40)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(endothelial_cells, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(endothelial_cells) <- "RNA"
+
+Idents(endothelial_cells) <- endothelial_cells$seurat_clusters
+endothelial_cells <- JoinLayers(endothelial_cells, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+endothelial_cells_cluster_ids <- levels(endothelial_cells$seurat_clusters)
+
+endothelial_cells_cluster_labels <- c("Capillary ECs", "Capillary ECs", "Capillary ECs", "Capillary ECs", "Capillary ECs", "Capillary ECs", "Capillary ECs", "Venous ECs", "Arterial ECs", "Arterial ECs", "Arterial ECs", "Arterial ECs", "Capillary ECs", "Capillary ECs", "Venous ECs", "Capillary ECs", "Arterial ECs", "Arterial ECs", "Capillary ECs", "Capillary ECs", "Venous ECs", "Venous ECs")
+
+endothelial_cells_clusters <- endothelial_cells@meta.data$seurat_clusters
+
+endothelial_cells$seurat_clusters <- endothelial_cells_cluster_labels[endothelial_cells$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+endothelial_cells$seurat_clusters <- factor(endothelial_cells$seurat_clusters, levels = c("Capillary ECs", "Arterial ECs", "Venous ECs"))
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+endothelial_cells_cluster_ids <- levels(endothelial_cells$seurat_clusters)
+Idents(endothelial_cells) <- "seurat_clusters"
+
+DotPlot(object = endothelial_cells,features = c("Timp4", "Car4", "Ssh2", "Lpl", "Egln1", "Clu", "Hey1", "Btnl9", "Fbln5", "Stmn2", "Fn1", "Mecom", "Lars2", "Vwf", "Lrg1", "Ehd4", "Il6st", "Plvap")) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(endothelial_cells, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[Cells(endothelial_cells)] <- as.character(endothelial_cells$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(endothelial_cells, endothelial_cells_cluster_ids, endothelial_cells_cluster_labels, endothelial_cells_clusters)
+```
+
+
+
+# Neutrophils
+
+## Subset Neutrophils
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+neutrophils <- subset(sc_combined, idents = "Neutrophils")
+
+neutrophils$subcluster <- NA
+```
+
+
+## Re-process cells
+
+```{r, include=FALSE}
+neutrophils[["RNA"]]@layers <- neutrophils[["RNA"]]@layers[c("counts", "data")]
+
+neutrophils <- NormalizeData(neutrophils) %>%
+  FindVariableFeatures(nfeatures = 2000) %>%
+  ScaleData(features = VariableFeatures(neutrophils)) %>%
+  RunPCA(npcs = 50)
+```
+
+```{r}
+ElbowPlot(neutrophils, ndims = 50)
+```
+
+
+## Run harmony
+
+```{r, include=FALSE}
+neutrophils <- RunHarmony(neutrophils, group.by.vars = "experiment", theta = 4)
+
+neutrophils <- FindNeighbors(neutrophils,reduction = "harmony",
+                                dims = 1:41) %>% 
+  FindClusters(resolution = 0.9)
+
+neutrophils <- RunUMAP(neutrophils, reduction = "harmony", dims = 1:41)
+```
+
+
+## Visualize data integration
+
+```{r}
+DimPlot(neutrophils, reduction = "harmony", group.by = "experiment", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "harmony1", y = "harmony2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Join layers
+
+```{r, include=FALSE}
+DefaultAssay(neutrophils) <- "RNA"
+
+Idents(neutrophils) <- neutrophils$seurat_clusters
+neutrophils <- JoinLayers(neutrophils, what = "all")
+```
+
+
+## Specify subclusters
+
+### NOTE - I got these initially by visually comparing key markers between subclusters, and running FindAllMarkers to get list of genes different between subclusters.
+
+```{r, include=FALSE}
+neutrophils_cluster_ids <- levels(neutrophils$seurat_clusters)
+
+neutrophils_cluster_labels <- c("Mature neutrophils", "Mature neutrophils", "Promyelocytes", "Promyelocytes", "Myonuclei", "Myelocytes", "Promyelocytes", "Promyelocytes", "Promyelocytes", "Promyelocytes", "Promyelocytes", "Erythrocytes", "Promyelocytes", "Promyelocytes", "Erythrocytes", "Promyelocytes")
+
+neutrophils_clusters <- neutrophils@meta.data$seurat_clusters
+
+neutrophils$seurat_clusters <- neutrophils_cluster_labels[neutrophils$seurat_clusters]
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+neutrophils$seurat_clusters <- factor(neutrophils$seurat_clusters, levels = c("Promyelocytes", "Myelocytes", "Mature neutrophils", "Myonuclei", "Erythrocytes"))
+```
+
+
+## Add Myonuclei back to Myonuclei cluster and remove from neutrophils and from sc_combined (they are a myonuclei/neutrophil cluster)
+
+```{r, include=FALSE}
+Idents(neutrophils) <- "seurat_clusters"
+
+### Identify myonuclei in Neutrophil cluster
+myonuclei_cells <- colnames(neutrophils)[neutrophils$seurat_clusters == "Myonuclei"]
+
+### Classify Neutrophil subcluster as Myonuclei
+sc_combined$subcluster[myonuclei_cells] <- "Myonuclei"
+
+### Remove Neutrophils with Myonuclei subcluster
+neutrophils_myonuclei_cells <- colnames(sc_combined)[
+  sc_combined$subcluster == "Myonuclei" & sc_combined$seurat_clusters == "Neutrophils"
+]
+
+sc_combined <- subset(sc_combined, cells = setdiff(colnames(sc_combined), neutrophils_myonuclei_cells))
+
+### Remove from Neutrophils
+neutrophils <- subset(neutrophils, cells = setdiff(colnames(neutrophils), myonuclei_cells))
+
+rm(myonuclei_cells, neutrophils_myonuclei_cells)
+```
+
+
+## Plot to show DEGs between subclusters
+
+```{r}
+neutrophils_cluster_ids <- levels(neutrophils$seurat_clusters)
+Idents(neutrophils) <- "seurat_clusters"
+
+DotPlot(object = neutrophils, features = c(
+  "mt-Co1", "mt-Co2", "mt-Co3", "Rpl12", ## Promyelocyte
+  "Camp", "Cebpe", "Chil3", "Itgam", "Itgb2", "Ltf", "Ly6g", "Mmp8", "Ngp", "Retnlg", ## Myelocyte
+  "Ccl6", "Cd33", "H2-D1", "Cxcr2", "Cxcr4", "Fos", "Sell", "Cebpb", "Dusp1", "Il1b",  "Junb" ## Metamyelocyte / Band neutrophil / Segmented neutrophil
+  )) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "italic"))
+```
+
+
+## Visualize subclusters
+
+```{r}
+DimPlot(neutrophils, reduction = "umap", group.by = "seurat_clusters", repel = TRUE, pt.size = 1) +
+  ggplot2::labs(title = "", x = "UMAP1", y = "UMAP2") +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank())
+```
+
+
+## Write new subcluster labels back into sc_combined
+
+```{r, include=FALSE}
+sc_combined$subcluster[names(neutrophils$seurat_clusters)] <- 
+  as.character(neutrophils$seurat_clusters)
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(neutrophils, neutrophils_cluster_ids, neutrophils_cluster_labels, neutrophils_clusters)
+```
+
+
+
+# AT THE END CLEAN UP
+
+## Remove cells with Erythrocytes or Epithelial cells subclusters
+
+```{r, include=FALSE}
+sc_combined <- subset(sc_combined, cells = colnames(sc_combined)[!sc_combined$subcluster %in% c("Erythrocytes", "Epithelial cells")])
+```
+
+
+## For those without subclusters, make their seurat_clusters their subclusters
+
+```{r, include=FALSE}
+sc_combined$subcluster[is.na(sc_combined$subcluster)] <- as.character(sc_combined$seurat_clusters[is.na(sc_combined$subcluster)])
+```
+
+
+## Remove Adipocytes cluster (appears to be more Erythrocytes)
+
+```{r, include=FALSE}
+sc_combined <- subset(sc_combined, cells = colnames(sc_combined)[!sc_combined$seurat_clusters %in% "Adipocytes"])
+```
+
+
+## Move subcluster column next to seurat_clusters
+
+```{r, include=FALSE}
+sc_combined@meta.data <- sc_combined@meta.data %>%
+  dplyr::relocate(subcluster, .after = seurat_clusters)
+```
+
+
+## Order subclusters
+
+```{r, include=FALSE}
+sc_combined$subcluster <- factor(sc_combined$subcluster, levels = c("Quiescent SCs", "Activated SCs", "Cachexia-associated SCs", "Pro-angiogenic SCs", "Committed myoblasts", "Differentiating myoblasts (2x)", "Differentiating myoblasts (2b/x)", "Differentiating myoblasts (2b)", "Type 1 myonuclei", "Type 2a/x myonuclei", "Type 2x myonuclei", "Type 2b/x myonuclei", "Type 2b myonuclei", "Capillary ECs", "Arterial ECs", "Venous ECs", "vSMCs", "Pericytes", "Stem FAPs", "Activated FAPs", "Pro-remodeling FAPs", "Pro-angiogenic FAPs", "Pro-adipogenic FAPs", "Immuno FAPs", "Tenm2+ FAPs", "Tenocytes", "Platelets", "Mast cells", "Dendritic cells", "Patrolling monocytes", "Inflammatory monocytes", "M1 macrophages", "M1/M2 macrophages", "M2 macrophages", "Promyelocytes", "Myelocytes", "Mature neutrophils", "Pro-B cells", "Naive B cells", "Immature B cells", "Regulatory B cells", "Plasma cells", "Naive T cells", "Cytotoxic T cells", "NK cells", "Neural/glial cells", "Schwann cells"))
+```
+
+
+## Split Monocytes/macrophages cluster
+
+```{r}
+sc_combined$seurat_clusters <- as.character(sc_combined$seurat_clusters)
+
+# Monocytes
+sc_combined$seurat_clusters[sc_combined$subcluster %in% c("Patrolling monocytes", "Inflammatory monocytes")] <- "Monocytes"
+
+# Macrophages
+sc_combined$seurat_clusters[sc_combined$subcluster %in% c("M1 macrophages", "M1/M2 macrophages", "M2 macrophages")] <- "Macrophages"
+
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters)
+```
+
+
+## Reorder clusters
+
+```{r, include=FALSE}
+sc_combined$seurat_clusters <- factor(sc_combined$seurat_clusters, levels = c("Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Adipocytes", "Platelets", "Mast cells", "Dendritic cells", "Monocytes", "Macrophages", "Neutrophils", "B cells", "T cells", "NK cells", "Neural/glial cells", "Schwann cells"))
+```
+
+
+## Dotplot of muscle subclusters
+
+```{r}
+Idents(sc_combined) <- "subcluster"
+
+DotPlot(object = sc_combined, features = c(
+  # Satellite cells
+  "Pax7", "Myf5", ## Quiescent
+  "Myod1", "Myog", ## Activated
+  "Cebpb", "Cebpd", "Socs3", ## Cachexia-associated
+  "Fabp4", "Flt1", ## Pro-angiogenic
+  
+  # Myoblasts
+  ## Myod1 and Myog but no Pax7
+  "Mapk14", ## pan Myoblast
+  
+  # Myonuclei
+  "Acta1", ## pan Myonuclei
+  "Myh7", ## type-I
+  "Myh2", ## type-IIa
+  "Myh1", ## type-IIx
+  "Myh4", ## type-IIb
+  
+  # Endothelial cells
+  "Timp4", "Car4", "Lpl", "Egln1", ## capillary
+  "Clu", "Hey1", "Btnl9", "Fbln5", "Stmn2", "Fn1", "Mecom", ## arterial
+  "Vwf", "Lrg1", "Ehd4", "Il6st", "Plvap", ## venous
+  
+  # vSMCs
+  "Myl9", 
+  
+  # Pericytes
+  "Pdgfrb",
+  
+  # FAPs
+  "Pdgfra", "Cd34", ## pan FAPs
+  "Dpp4", "Pi16", ## stem FAPs
+  "Postn", "Timp1", ## activated FAPs
+  "Mme", "Cxcl14", ## pro-remodeling FAPs
+  "Cdh5", "Egfl7", ## pro-angiogenic FAPs
+  "Gsn","Bgn", "Igfbp3", ## pro-adipogenic FAPs
+  "Osmr", "Il6", "Ccl7", ## immuno FAPs
+  "Tenm2", ## Tenm2+ FAPs
+  
+  # Tenocytes
+  "Tnmd",
+  
+  # Platelets
+  "Mmrn1", "Ccl21a",
+  
+  # Mast cells
+  "Cpa3", "Tpsb2",
+  
+  # Dendritic cells
+  "Fscn1", "Flt3",
+  
+  # Monocytes
+  "Ctss", "Fabp5", "Ctsz", "Ctsl", "Ctsb", "Ctsa", ## patrolling Monocytes
+  "Ccr2", "Ly6c2", ## inflammatory Monocytes
+  
+  # Macrophages
+  "Cd68", "Cd74", "Cd83", ## pan Macrophages
+  "Cx3cr1", "Ccl6", "Ccl9", ## pro-inflammatory Macrophages
+  "C1qa", "Csf1r", "Fcgr3", ## anti-inflammatory Macrophage
+  
+  # Neutrophils
+  "S100a8", "S100a9", ## Pan Neutrophils
+  "mt-Co1", "mt-Co2", "mt-Co3", "Rpl12", ## Promyelocyte
+  "Camp", "Cebpe", "Chil3", "Itgb2", "Ltf", "Ly6g", "Mmp8", "Ngp", "Retnlg", "Itgam", ## Myelocyte
+  "Cd33", "Cxcr4", "Dusp1", "Il1b", ## Metamyelocyte / Band neutrophil / Segmented neutrophil
+  
+  # B cells
+  "Cd19", "Cd79a", "Cd79b", ## Pan B cells
+  "Rag1", "Rag2", "Dntt", "Vpreb1", "Igll1", ## Pro-B cells
+  "Ighm", "Ighd", "Ms4a1", "Fcer2a", ## Naive B cells
+  "Btk", "Pax5", "Lef1", "Ebf1", ## Immature B cells
+  "Sell", "Cxcr5", "Bcl2", "Mzb1", ## Regulatory B cells
+  "Jchain", "Xbp1", "Hsp90b1", ## Plasma cells
+  
+  # T cells
+  "Cd3e", ## Pan T cells
+  "Ccr7", "Klf2", "Il7r", ## Naive (Cd44-) or memory
+  "Ccl5", "Ctsw", "Klrd1", ## Cytotoxic T cells
+  
+  # NK cells
+  "Nkg7", "Klra7",
+  
+  # Neural/glial cells
+  "Ptn", "Cdh19",
+  
+  # Schwann cells
+  "Mpz", "S100b"
+  
+)) +
+  scale_color_gradientn(colors = c("red", "white", "blue")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  theme(axis.text.y = element_text(face = "italic")) +
+  coord_flip()
+```
+
+
+
+# Set colours
+
+```{r, include=FALSE}
+cluster_colours <- c(
+    "Satellite cells"                = "#FF7FBF",
+    "Myoblasts"                      = "#FF3F80",
+    "Myonuclei"                      = "#E00000",
+    "Endothelial cells"              = "#D2B48C",
+    "vSMCs"                          = "#BC9D00",
+    "Pericytes"                      = "#8B5A2B",
+    "FAPs"                           = "#7CFC00",
+    "Tenocytes"                      = "#228B22",
+    "Platelets"                      = "#D46A6A", 
+    "Mast cells"                     = "#C85C8C", 
+    "Dendritic cells"                = "#B84D9E", 
+    "Monocytes"                      = "#80E5FF",
+    "Macrophages"                    = "#1E90FF",
+    "Neutrophils"                    = "#4169E1",
+    "B cells"                        = "#C9A2FF",
+    "T cells"                        = "#B44CFF",
+    "NK cells"                       = "#5B0E8A",
+    "Neural/glial cells"             = "#FF7F00",
+    "Schwann cells"                  = "#FFA64D"
+)
+```
