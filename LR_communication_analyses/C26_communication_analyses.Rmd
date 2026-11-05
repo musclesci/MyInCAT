@@ -1,0 +1,614 @@
+---
+title: "C26_communication_analyses"
+author: "Alex Brown"
+date: "2025-11-18"
+output: html_document
+---
+
+
+
+# Load packages
+
+```{r, include=FALSE}
+library(Seurat)
+library(SeuratWrappers)
+library(tidyverse)
+library(Biobase)
+library(BiocGenerics)
+library(ggplot2)
+library(gridExtra)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(clusterProfiler)
+library(circlize)
+library(ComplexHeatmap)
+library(CellChat)
+library(UCell)
+```
+
+
+
+# Load data
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/sc_combined_subclusters.RData")
+```
+
+
+
+# Subset scRNAseq for C26 tumour-bearing muscle
+
+```{r, include=FALSE}
+rm(all_genes, Agca_snLLC_CTL, Agca_snLLC_LLC, Brown_scLLC_CTL, Brown_scLLC_2w, Brown_scLLC_2.5w, Brown_scLLC_3.5w, Kim_scB16F10_CTL, Kim_scB16F10_B16F10, Pryce_scC26_CTL, Pryce_scC26_C26, Pryce_scKPP_CTL, Pryce_scKPP_KPP, Zhang_snKIC_CTL, Zhang_snKIC_KIC, DEGs_sc_combined)
+
+Idents(sc_combined) <- "experiment"
+
+C26_model <- subset(sc_combined, idents = "Pryce_scC26")
+
+rm(sc_combined)
+```
+
+
+
+# Read in the list of receptors that match ligands from bulkRNAseq of C26 tumours
+
+```{r, include=FALSE}
+C26_receptors <- read.csv("C:/Users/nwb_l/Documents/r_projects/scIntegration/tumour_bulk_RNAseq/receptor_lists/C26_secreted_genes_receptors.csv", header = FALSE)
+
+C26_receptors <- C26_receptors[[1]]
+```
+
+
+## Check to see which genes are not present in LLC_model and remove from C26_receptors
+
+```{r}
+C26_receptors_use <- intersect(C26_receptors, rownames(C26_model))
+
+not_in_model <- setdiff(C26_receptors, rownames(C26_model))
+
+not_in_model
+
+rm(not_in_model, C26_receptors)
+```
+
+
+
+# Run GO terms on all receptors picking up signals from tumours
+
+```{r, include=FALSE}
+C26_model_go <- enrichGO(gene = C26_receptors_use, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
+```
+
+```{r, include=FALSE}
+write.csv(C26_model_go, file = "go_C26_receptors_use.csv", row.names = TRUE)
+```
+
+
+## Visualize top 10 GO terms
+
+```{r}
+C26_model_go_top10 <- C26_model_go[1:10, ]
+
+ggplot(C26_model_go_top10, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP GO C26 muscle receptors") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+
+
+# Run KEGG pathway analysis on the receptors that are upregulated in tumour-bearing muscle
+
+### Get DEGs in cachectic subcluster
+
+```{r, include=FALSE}
+Idents(C26_model) <- "orig.ident"
+
+DEGs_C26_model <- FindMarkers(C26_model, ident.1 = "Pryce_scC26_C26", ident.2 = "Pryce_scC26_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+```
+
+### Subset DEG for p_val_adj < 0.05 and avg_log2FC > 0.2 and in C26_receptors_use
+
+```{r}
+DEGs_C26_model <- subset(DEGs_C26_model, p_val_adj < 0.05 & avg_log2FC > 0.2)
+
+DEGs_C26_model <- DEGs_C26_model[rownames(DEGs_C26_model) %in% C26_receptors_use,
+]
+
+rownames(DEGs_C26_model)
+```
+
+### KEGG pathway analysis
+
+```{r, include=FALSE}
+### Convert gene symbols to Entrez IDs
+DEGs_C26_model_gene_names <- rownames(DEGs_C26_model)
+
+DEGs_C26_model_IDs <- bitr(DEGs_C26_model_gene_names,
+                  fromType = "SYMBOL",
+                  toType   = "ENTREZID",
+                  OrgDb    = org.Mm.eg.db)
+
+DEGs_C26_model_kegg <- enrichKEGG(
+  gene         = DEGs_C26_model_IDs$ENTREZID,
+  organism     = "mmu",
+  keyType      = "kegg",
+  pvalueCutoff = 0.05
+)
+
+write.csv(DEGs_C26_model_kegg, file = "kegg_C26_receptors_use.csv", row.names = TRUE)
+```
+
+### Visualize KEGG pathways
+
+```{r}
+C26_signaling_pathways <- c(1:20)
+C26_kegg_signaling <- DEGs_C26_model_kegg[C26_signaling_pathways, ]
+
+C26_kegg_signaling$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", C26_kegg_signaling$Description)
+
+ggplot(C26_kegg_signaling, aes(x = FoldEnrichment, 
+                           y = reorder(Description, FoldEnrichment),
+                           size = Count, 
+                           color = p.adjust)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
+  labs(x = "Fold Enrichment", y = NULL, 
+       title = "UP KEGG C26 muscle") +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+```
+
+
+
+# Remove unused objects
+
+```{r, include=FALSE}
+rm(DEGs_C26_model, DEGs_C26_model_IDs, DEGs_C26_model_gene_names, DEGs_C26_model_kegg, kegg_category, C26_kegg_signaling, C26_model_go, C26_model_go_top10, C26_signaling_pathways)
+```
+
+
+
+# Score cells for receptor expression
+
+```{r, include=FALSE}
+C26_receptors_score <- AddModuleScore_UCell(C26_model, features = list(C26_receptors_use), name = "C26_receptors_score")
+
+means_C26_receptors_score <- C26_receptors_score@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(average_C26_receptors_score = mean(signature_1C26_receptors_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_C26_receptors_score)
+```
+
+```{r}
+cluster_colours <- c(
+    "Satellite cells"      = "#FF7FBF",
+    "Myoblasts"            = "#FF3F80",
+    "Myonuclei"            = "#E00000",
+    "Endothelial cells"    = "#FFFF00",
+    "vSMCs"                = "#BC9D00",
+    "Pericytes"            = "#8B5A2B",
+    "FAPs"                 = "#7CFC00",
+    "Tenocytes"            = "#228B22",
+    "Platelets"            = "#D46A6A", 
+    "Mast cells"           = "#C85C8C", 
+    "Dendritic cells"      = "#B84D9E", 
+    "Monocytes"            = "#80E5FF",
+    "Macrophages"          = "#1E90FF",
+    "Neutrophils"          = "#4169E1",
+    "B cells"              = "#C9A2FF",
+    "T cells"              = "#B44CFF",
+    "NK cells"             = "#5B0E8A",
+    "Neural/glial cells"   = "#FF7F00",
+    "Schwann cells"        = "#FFA64D" 
+)
+
+VlnPlot(C26_receptors_score, features = "signature_1C26_receptors_score", group.by = "seurat_clusters", pt.size = 0) +
+  scale_fill_manual(values = cluster_colours) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "C26 receptors score", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+FeaturePlot(
+  C26_receptors_score, features = "signature_1C26_receptors_score", reduction = "umap") +
+  labs(color = "C26 receptors score") +
+  theme(plot.title = element_blank())
+```
+
+
+## Subset for CONTROLS
+
+```{r, include=FALSE}
+Idents(C26_model) <- "orig.ident"
+
+C26_model_ctl <- subset(C26_model, idents = "Pryce_scC26_CTL")
+```
+
+
+## Score CONTROL cells for receptor expression
+
+```{r, include=FALSE}
+C26_receptors_ctl_score <- AddModuleScore_UCell(C26_model_ctl, features = list(C26_receptors_use), name = "C26_receptors_ctl_score")
+
+means_C26_receptors_ctl_score <- C26_receptors_ctl_score@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(average_C26_receptors_ctl_score = mean(signature_1C26_receptors_ctl_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_C26_receptors_ctl_score)
+```
+
+```{r}
+VlnPlot(C26_receptors_ctl_score, features = "signature_1C26_receptors_ctl_score", group.by = "seurat_clusters", pt.size = 0) + scale_fill_manual(values = cluster_colours) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "C26 receptors (controls) score", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+FeaturePlot(
+  C26_receptors_ctl_score, features = "signature_1C26_receptors_ctl_score", reduction = "umap") +
+  labs(color = "C26 receptors (controls) score") +
+  theme(plot.title = element_blank())
+```
+
+
+## Subset for endpoint C26 tumour-bearing
+
+```{r, include=FALSE}
+Idents(C26_model) <- "orig.ident"
+
+C26_model_end <- subset(C26_model, idents = "Pryce_scC26_C26")
+```
+
+
+## Score ENDPOINT cells for receptor expression
+
+```{r, include=FALSE}
+C26_receptors_end_score <- AddModuleScore_UCell(C26_model_end, features = list(C26_receptors_use), name = "C26_receptors_end_score")
+
+means_C26_receptors_end_score <- C26_receptors_end_score@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(average_C26_receptors_end_score = mean(signature_1C26_receptors_end_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_C26_receptors_end_score)
+```
+
+```{r}
+VlnPlot(C26_receptors_end_score, features = "signature_1C26_receptors_end_score", group.by = "seurat_clusters", pt.size = 0) + scale_fill_manual(values = cluster_colours) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "C26 receptors (endpoint) score", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+FeaturePlot(
+  C26_receptors_end_score, features = "signature_1C26_receptors_end_score", reduction = "umap") +
+  labs(color = "C26 receptors (endpoint) score") +
+  theme(plot.title = element_blank())
+```
+
+
+## Remove unused objects
+
+```{r, include=FALSE}
+rm(C26_model_ctl, C26_model_end, C26_receptors_ctl_score, C26_receptors_end_score, means_C26_receptors_ctl_score, means_C26_receptors_end_score, C26_receptors_score, means_C26_receptors_score)
+```
+
+
+
+# Read in MC38 tumour (scRNAseq)
+
+```{r, include=FALSE}
+load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/MC38_tumours_immune_scRNAseq.RData")
+
+MC38_tumour <- MC38_tumour_singlets
+rm(MC38_tumour_singlets)
+```
+
+
+## Read in the list of ligands from bulkRNAseq of C26 tumours
+
+```{r, include=FALSE}
+C26_ligands <- read.csv("C:/Users/nwb_l/Documents/r_projects/scIntegration/tumour_bulk_RNAseq/receptor_lists/C26_secreted_genes.csv", header = FALSE)
+
+C26_ligands <- C26_ligands[[1]]
+```
+
+
+## Check to see which genes are not present in MC38_tumour and remove from C26_ligands
+
+```{r}
+C26_ligands_use <- intersect(C26_ligands, rownames(MC38_tumour))
+
+not_in_model <- setdiff(C26_ligands, rownames(MC38_tumour))
+
+not_in_model
+
+rm(not_in_model, C26_ligands)
+```
+
+
+## Score cells for ligand expression
+
+```{r, include=FALSE}
+C26_ligands_score <- AddModuleScore_UCell(MC38_tumour, features = list(C26_ligands_use), name = "C26_ligands_score")
+
+means_C26_ligands_score <- C26_ligands_score@meta.data %>%
+  group_by(seurat_clusters) %>%
+  summarise(average_C26_ligands_score = mean(signature_1C26_ligands_score, na.rm = TRUE))
+```
+
+```{r}
+print(means_C26_ligands_score)
+```
+
+
+```{r}
+MC38_tumour_cluster_colours <- c(
+    "CAFs"                 = "#7CFC00",
+    "Monocytes"            = "#80E5FF",
+    "Macrophages"          = "#1E90FF",
+    "Neutrophils"          = "#4169E1",
+    "T cells"              = "#B44CFF",
+    "NK cells"             = "#5B0E8A"
+)
+
+VlnPlot(C26_ligands_score, features = "signature_1C26_ligands_score", group.by = "seurat_clusters", pt.size = 0) +
+  scale_fill_manual(values = MC38_tumour_cluster_colours) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
+  labs(x = NULL, y = "C26 ligands score", title = NULL) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+```
+
+```{r}
+FeaturePlot(
+  C26_ligands_score, features = "signature_1C26_ligands_score", reduction = "umap") +
+  labs(color = "C26 ligands score") +
+  theme(plot.title = element_blank())
+```
+
+
+
+# What receptor genes are upregulated in cachectic endothelial cells, vSMCs, pericytes in the muscle?
+
+### Subset for endothelial cells, vSMCs, pericytes
+
+```{r, include=FALSE}
+Idents(C26_model) <- "seurat_clusters"
+
+C26_model_ECs_vSMCs_pericytes <- subset(C26_model, idents = c("Endothelial cells", "vSMCs", "Pericytes"))
+```
+
+### DEGs in tumour-bearing endothelial cells, vSMCs, pericytes
+
+```{r, include=FALSE}
+Idents(C26_model_ECs_vSMCs_pericytes) <- "orig.ident"
+
+DEGs_C26_model_ECs_vSMCs_pericytes <- FindMarkers(C26_model_ECs_vSMCs_pericytes, ident.1 = "Pryce_scC26_C26", ident.2 = "Pryce_scC26_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+```
+
+### Subset DEGs for p_val_adj < 0.05, avg_log2FC > 0.2, included in C26_receptors_use
+
+```{r}
+DEGs_C26_model_ECs_vSMCs_pericytes <- subset(DEGs_C26_model_ECs_vSMCs_pericytes, p_val_adj < 0.05 & avg_log2FC > 0.2)
+
+DEGs_C26_model_ECs_vSMCs_pericytes <- DEGs_C26_model_ECs_vSMCs_pericytes[
+    rownames(DEGs_C26_model_ECs_vSMCs_pericytes) %in% C26_receptors_use,
+]
+
+rownames(DEGs_C26_model_ECs_vSMCs_pericytes)
+```
+
+### Violin plots
+
+```{r}
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Cd36", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Cd36")
+
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Adgrg1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Adgrg1")
+
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Adipor2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Adipor2")
+
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Ackr3", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Ackr3")
+
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Plaur", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Plaur")
+
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Cx3cr1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Cx3cr1")
+
+VlnPlot(C26_model_ECs_vSMCs_pericytes, features = "Flt1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Flt1")
+```
+
+
+
+# What receptor genes are upregulated in cachectic myeloid cells in the muscle?
+
+### Subset for myeloid cells
+
+```{r, include=FALSE}
+Idents(C26_model) <- "seurat_clusters"
+
+C26_model_myeloid <- subset(C26_model, idents = c("Monocytes", "Macrophages", "Neutrophils"))
+```
+
+### DEGs in tumour-bearing myeloid cells
+
+```{r, include=FALSE}
+Idents(C26_model_myeloid) <- "orig.ident"
+
+DEGs_C26_model_myeloid <- FindMarkers(C26_model_myeloid, ident.1 = "Pryce_scC26_C26", ident.2 = "Pryce_scC26_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+```
+
+### Subset DEGs for p_val_adj < 0.05, avg_log2FC > 0.2, included in B16_receptors_use
+
+```{r}
+DEGs_C26_model_myeloid_from_tumour <- subset(DEGs_C26_model_myeloid, p_val_adj < 0.05 & avg_log2FC > 0.2)
+
+DEGs_C26_model_myeloid_from_tumour <- DEGs_C26_model_myeloid_from_tumour[
+    rownames(DEGs_C26_model_myeloid_from_tumour) %in% C26_receptors_use,
+]
+
+rownames(DEGs_C26_model_myeloid_from_tumour)
+```
+
+### Violin plots
+
+```{r}
+VlnPlot(C26_model_myeloid, features = "C5ar1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "C5ar1")
+
+VlnPlot(C26_model_myeloid, features = "Plaur", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Plaur")
+
+VlnPlot(C26_model_myeloid, features = "Ccr1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Ccr1")
+
+VlnPlot(C26_model_myeloid, features = "Adipor1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Adipor1")
+
+VlnPlot(C26_model_myeloid, features = "Cd44", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Cd44")
+
+VlnPlot(C26_model_myeloid, features = "Cxcr2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Cxcr2")
+
+VlnPlot(C26_model_myeloid, features = "Il1rap", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Il1rap")
+
+VlnPlot(C26_model_myeloid, features = "Pirb", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Pirb")
+
+VlnPlot(C26_model_myeloid, features = "Fpr1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Fpr1")
+
+VlnPlot(C26_model_myeloid, features = "Sorl1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Sorl1")
+
+VlnPlot(C26_model_myeloid, features = "Fpr2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Fpr2")
+
+VlnPlot(C26_model_myeloid, features = "Igf1r", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Igf1r")
+
+VlnPlot(C26_model_myeloid, features = "Csf1r", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Csf1r")
+
+VlnPlot(C26_model_myeloid, features = "Itgam", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Itgam")
+
+VlnPlot(C26_model_myeloid, features = "Tlr4", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Tlr4")
+
+VlnPlot(C26_model_myeloid, features = "Itgb2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Itgb2")
+
+VlnPlot(C26_model_myeloid, features = "Tyrobp", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Tyrobp")
+
+VlnPlot(C26_model_myeloid, features = "Cd47", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Cd47")
+
+VlnPlot(C26_model_myeloid, features = "Trem2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Trem2")
+
+VlnPlot(C26_model_myeloid, features = "Itga5", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Itga5")
+
+VlnPlot(C26_model_myeloid, features = "Tgfbr1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Tgfbr1")
+
+VlnPlot(C26_model_myeloid, features = "C3ar1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "C3ar1")
+
+VlnPlot(C26_model_myeloid, features = "Lifr", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Lifr")
+
+VlnPlot(C26_model_myeloid, features = "Sdc4", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Sdc4")
+
+VlnPlot(C26_model_myeloid, features = "Adipor2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Adipor2")
+
+VlnPlot(C26_model_myeloid, features = "Cxcr4", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Cxcr4")
+
+VlnPlot(C26_model_myeloid, features = "Tgfbr2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Tgfbr2")
+
+VlnPlot(C26_model_myeloid, features = "Nrp2", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Nrp2")
+
+VlnPlot(C26_model_myeloid, features = "Ccr5", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Ccr5")
+
+VlnPlot(C26_model_myeloid, features = "Nrp1", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Nrp1")
+
+VlnPlot(C26_model_myeloid, features = "Tmem219", pt.size = 0) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = NULL, y = "Expression", title = "Tmem219")
+```
