@@ -1,3 +1,5 @@
+<img width="1289" height="1221" alt="MyInCAT_colour" src="https://github.com/user-attachments/assets/da4afbff-18db-4dc9-81bf-83a211162a2b" />
+
 # MyInCAT
 We present the Myogenic single-cell Integration of Cachexia-Associated Transcriptomics (MyInCAT) resource for the analysis of single-cell/nucleus RNA-sequencing datasets of skeletal muscle with cancer cachexia and their associated tumours.
 
