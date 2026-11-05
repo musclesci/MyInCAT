@@ -1,5 +1,5 @@
 ---
-title: "hpa_analyses"
+title: "human_analyses"
 author: "Alex Brown"
 date: "2026-03-04"
 output: html_document
@@ -99,28 +99,30 @@ hpa_pea_targets$Cachexia_risk <- factor(
 
 ## Plot blood protein levels
 
-### Define cancers from most to least cachectic (according to CHATGPT may need to reorder)
+### Define cancers from most to least cachectic
 
 ```{r, include=FALSE}
 cachexia_order <- c(
-  "Pituitary neuroendocrine tumor",
-  "Meningioma",
   "Prostate cancer",
-  "Glioma",
-  "Endometrial cancer",
   "Cervical cancer",
+  "Metastatic melanoma",
   "Breast ductal carcinoma in situ",
   "Breast cancer",
+  
   "Chronic lymphocytic leukemia",
   "Acute myeloid leukemia",
   "Myeloma",
   "Diffuse large B-cell lymphoma",
+  "Meningioma",
+  "Glioma",
+  "Pituitary neuroendocrine tumor",
+  "Endometrial cancer",
   "Ovarian cancer",
-  "Metastatic melanoma",
+  
   "Small intestine neuroendocrine tumor",
-  "Hepatocellular cancer",
   "Colorectal cancer",
   "Lung cancer",
+  "Hepatocellular cancer",
   "Pancreatic cancer"
 )
 ```
@@ -160,7 +162,7 @@ ggplot(
     na.value = "black",
     name = "Adjusted p-value"
   ) +
-  coord_cartesian(ylim = c(-0.5, 2)) +
+  coord_cartesian(ylim = c(-1, 3)) +
   labs(
     title = "Plasma TNF",
     x = "Cancer type (ranked by cachexia potential)",
@@ -188,7 +190,7 @@ ggplot(
     na.value = "black",
     name = "Adjusted p-value"
   ) +
-  coord_cartesian(ylim = c(-0.5, 0.5)) +
+  coord_cartesian(ylim = c(-1, 3)) +
   labs(
     title = "Plasma CCL2",
     x = "Cancer type (ranked by cachexia potential)",
@@ -216,7 +218,7 @@ ggplot(
     na.value = "black",
     name = "Adjusted p-value"
   ) +
-  coord_cartesian(ylim = c(-0.75, 0.75)) +
+  coord_cartesian(ylim = c(-1, 3)) +
   labs(
     title = "Plasma CXCL12",
     x = "Cancer type (ranked by cachexia potential)",
@@ -244,6 +246,7 @@ ggplot(
     na.value = "black",
     name = "Adjusted p-value"
   ) +
+  coord_cartesian(ylim = c(-1, 3)) +
   labs(
     title = "Plasma OSM",
     x = "Cancer type (ranked by cachexia potential)",
@@ -521,35 +524,44 @@ tumour_rna <- read_tsv("C:/Users/nwb_l/Documents/r_projects/scIntegration/data/h
 ## Add gene names to data.frame
 
 ```{r, include=FALSE}
-# Connect to Ensembl
-mart <- useEnsembl(
-  biomart = "genes",
-  dataset = "hsapiens_gene_ensembl"
-)
+# Clean Ensembl IDs (remove version numbers if present)
+tumour_rna <- tumour_rna %>%
+  mutate(Gene_clean = sub("\\..*", "", Gene))
 
-# Get mapping table
-gene_map <- getBM(
-  attributes = c("ensembl_gene_id", "hgnc_symbol"),
-  filters = "ensembl_gene_id",
-  values = unique(tumour_rna$Gene),
-  mart = mart
+# Create mapping table
+gene_map <- data.frame(
+  ensembl_gene_id = unique(tumour_rna$Gene_clean),
+  hgnc_symbol = mapIds(
+    org.Hs.eg.db,
+    keys = unique(tumour_rna$Gene_clean),
+    column = "SYMBOL",
+    keytype = "ENSEMBL",
+    multiVals = "first"
+  )
 )
 
 # Join back to your dataframe
 tumour_rna <- tumour_rna %>%
   left_join(gene_map,
-            by = c("Gene" = "ensembl_gene_id")) %>%
+            by = c("Gene_clean" = "ensembl_gene_id")) %>%
   rename(Gene_symbol = hgnc_symbol)
 
 # Drop NA values
 tumour_rna <- tumour_rna %>%
   drop_na(Gene_symbol)
 
-# Remove "TCGA" (from HPA) and "validation" (from publically available databases) from Cancer names
+# Clean Cancer names
 tumour_rna <- tumour_rna %>%
   mutate(
     Cancer = sub(" \\(.*\\)", "", Cancer)
   )
+
+# Fix spelling of Cuteneous to Cutaneous
+tumour_rna$Cancer <- gsub(
+  "Skin Cuteneous Melanoma",
+  "Skin Cutaneous Melanoma",
+  tumour_rna$Cancer
+)
 ```
 
 
@@ -557,32 +569,35 @@ tumour_rna <- tumour_rna %>%
 
 ```{r, include=FALSE}
 cachexia_order <- c(
-  "Thyroid Carcinoma",
-  "Testicular Germ Cell Tumor",
-  "Stomach Adenocarcinoma",
-  "Rectum Adenocarcinoma",
-  "Kidney Renal Papillary Cell Carcinoma",
-  "Kidney Renal Clear Cell Carcinoma",
-  "Kidney Chromophobe",
-  "Head and Neck Squamous Cell Carcinoma",
-  "Bladder Urothelial Carcinoma",
   "Prostate Adenocarcinoma",
+  "Testicular Germ Cell Tumor",
+  "Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma",
+  "Skin Cutaneous Melanoma",
+  "Breast Invasive Carcinoma",
+  "Thyroid Carcinoma",
+
+  "Bladder Urothelial Carcinoma",
   "Glioblastoma Multiforme",
   "Uterine Corpus Endometrial Carcinoma",
-  "Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma",
-  "Breast Invasive Carcinoma",
+  "Kidney Chromophobe",
+  "Kidney Renal Clear Cell Carcinoma",
+  "Kidney Renal Papillary Cell Carcinoma",
   "Ovary Serous Cystadenocarcinoma",
-  "Skin Cuteneous Melanoma",
-  "Liver Hepatocellular Carcinoma",
+
+  "Rectum Adenocarcinoma",
+  "Stomach Adenocarcinoma",
   "Colon Adenocarcinoma",
+  "Head and Neck Squamous Cell Carcinoma",
+
   "Lung Squamous Cell Carcinoma",
   "Lung Adenocarcinoma",
+  "Liver Hepatocellular Carcinoma",
   "Pancreatic Adenocarcinoma"
 )
 ```
 
 
-## Add a column for high, moderate, and low cachexia
+## Add a column for very high, high, moderate, and low risk of cachexia
 
 ```{r}
 tumour_rna <- tumour_rna %>%
@@ -591,24 +606,38 @@ tumour_rna <- tumour_rna %>%
       "Pancreatic Adenocarcinoma",
       "Lung Adenocarcinoma",
       "Lung Squamous Cell Carcinoma",
-      "Colon Adenocarcinoma",
-      "Liver Hepatocellular Carcinoma",
-      "Stomach Adenocarcinoma"
-    ) ~ "High cachectic",
+      "Liver Hepatocellular Carcinoma"
+    ) ~ "Very High-risk",
     
     Cancer %in% c(
-      "Glioblastoma Multiforme",
-      "Ovary Serous Cystadenocarcinoma",
-      "Breast Invasive Carcinoma",
-      "Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma",
-      "Rectum Adenocarcinoma"
-    ) ~ "Moderate cachectic",
+      "Head and Neck Squamous Cell Carcinoma",
+      "Rectum Adenocarcinoma",
+      "Colon Adenocarcinoma",
+      "Stomach Adenocarcinoma"
+    ) ~ "High-risk",
     
-    TRUE ~ "Low cachectic"  # all remaining cancers
+    Cancer %in% c(
+      "Kidney Renal Papillary Cell Carcinoma",
+      "Kidney Renal Clear Cell Carcinoma",
+      "Kidney Chromophobe",
+      "Bladder Urothelial Carcinoma",
+      "Uterine Corpus Endometrial Carcinoma",
+      "Glioblastoma Multiforme",
+      "Ovary Serous Cystadenocarcinoma"
+    ) ~ "Moderate-risk",
+    
+    Cancer %in% c(
+      "Thyroid Carcinoma",
+      "Testicular Germ Cell Tumor",
+      "Prostate Adenocarcinoma",
+      "Skin Cutaneous Melanoma",
+      "Breast Invasive Carcinoma",
+      "Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma"
+    ) ~ "Low-risk"
   ))
 
 tumour_rna$Cachexia_risk <- factor(tumour_rna$Cachexia_risk, 
-                               levels = c("Low cachectic", "Moderate cachectic", "High cachectic"))
+                               levels = c("Low-risk", "Moderate-risk", "High-risk", "Very High-risk"))
 ```
 
 
@@ -793,9 +822,10 @@ ggplot(tnf_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   ) +
   scale_fill_manual(values = c(
-    "High cachectic" = "#666666",
-    "Moderate cachectic" = "lightgrey",
-    "Low cachectic" = "white"
+    "Very High-risk" = "#666666",
+    "High-risk" = "darkgrey",
+    "Moderate-risk" = "lightgrey",
+    "Low-risk" = "white"
   ))
 ```
 
@@ -852,9 +882,10 @@ ggplot(ccl2_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   ) +
   scale_fill_manual(values = c(
-    "High cachectic" = "#666666",
-    "Moderate cachectic" = "lightgrey",
-    "Low cachectic" = "white"
+    "Very High-risk" = "#666666",
+    "High-risk" = "darkgrey",
+    "Moderate-risk" = "lightgrey",
+    "Low-risk" = "white"
   ))
 ```
 
@@ -911,9 +942,10 @@ ggplot(cxcl12_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   ) +
   scale_fill_manual(values = c(
-    "High cachectic" = "#666666",
-    "Moderate cachectic" = "lightgrey",
-    "Low cachectic" = "white"
+    "Very High-risk" = "#666666",
+    "High-risk" = "darkgrey",
+    "Moderate-risk" = "lightgrey",
+    "Low-risk" = "white"
   ))
 ```
 
@@ -970,9 +1002,10 @@ ggplot(osm_df, aes(x = Cachexia_risk, y = pTPM, fill = Cachexia_risk)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   ) +
   scale_fill_manual(values = c(
-    "High cachectic" = "#666666",
-    "Moderate cachectic" = "lightgrey",
-    "Low cachectic" = "white"
+    "Very High-risk" = "#666666",
+    "High-risk" = "darkgrey",
+    "Moderate-risk" = "lightgrey",
+    "Low-risk" = "white"
   ))
 ```
 
@@ -1020,12 +1053,12 @@ tumour_cptac_targets <- tumour_cptac %>%
 cachexia_order <- c(
   "Endometrioid AC",
   "Uterine CEC",
-  "Head and Neck SQCC",
   "Renal cell carcinoma",
   "Colon AC",
-  "Liver HC",
-  "Lung AC",
+  "Head and Neck SQCC",
   "Lung SQCC",
+  "Lung AC",
+  "Liver HC",
   "Pancreatic DAC"
 )
 ```
@@ -1077,7 +1110,7 @@ rm(tumour_cptac, tumour_cptac_targets, cachexia_order, target_proteins)
 # Load human PDAC tumour scRNAseq data
 
 ```{r, include=FALSE}
-load("C:/Users/nwb_l/Documents/r_projects/Tumour_scRNAseq/PDAC_tumours_scRNAseq.RData")
+load("C:/Users/nwb_l/Documents/r_projects/scIntegration/dataset_processing/tumours/PDAC_tumours_scRNAseq.RData")
 
 pdac_tumours <- pdac_tumours_combined
 
@@ -1125,7 +1158,11 @@ rm(DEGs_PDAC_clusters, DEGs_PDAC_MuSCs, DEGs_PDAC_Myonuclei, DEGs_PDAC_Endotheli
 ## Get a list of predicted target genes from tumour-secreted ligands (identified by NicheNet)
 
 ```{r, include=FALSE}
-tnf_ccl12_cxcl12_targets <- c("Cd14", "Ier3", "Socs3", "Nfkbia", "Fgl2", "Hmox1", "Mt1", "Nfkbiz", "Ninj1", "Klf6", "Ehd1", "Tgfbi", "Junb", "Cxcl2", "Pnrc1", "Bcl3", "Cebpd", "Birc3", "Irf1", "Trib1", "Rnf19b", "Ppp1r15a", "Cdkn1a", "Gbp2b", "Tlr4", "Timp2", "Itgam", "Pim1", "Gbp2", "Tnfaip3", "Sdc4", "Gadd45b", "Plaur", "Cflar", "Nampt", "Ifngr1", "Il1b", "Mvp", "Zfp36", "C3", "Icam1", "Sod2", "Txnip", "Ppard", "Sqstm1", "Rgl1", "Cd44", "B4galt5", "Tlr2", "Tap1", "Hif1a", "Egr1", "Cd47", "Ncf1", "Ctss", "Ankrd33b", "Serpinb8", "Rhob", "Anxa1", "Stat1", "Ifnar2", "Emp1", "Fos", "Fas", "Cxcl1", "Bcl2l1", "Maff", "Tnfaip2", "Stx11", "Ddit4", "Nfkbib", "Cebpa", "Rela", "Noct", "Tank", "Optn", "Nedd9", "Dram1", "Nfkb2", "Tnf", "Rsad2", "Egr2", "Irak2", "Nfkbie", "Hivep2", "Pmaip1", "Znfx1", "Irf7", "Ikbke", "Tifa", "Il15", "Sgk1", "Jun", "Traf3", "Ccl2", "Parp12", "Ddx58", "Pla2g4a", "Ebi3", "Ddit3", "Ccl5", "Ptgs2", "Pfkfb4", "Ahr", "Ampd3", "G0s2", "Gadd45a", "Cd83", "Il1rn")
+tnf_targets <- c("Cd14", "Ier3", "Socs3", "Nfkbia", "Fgl2", "Hmox1", "Mt1", "Nfkbiz", "Ninj1", "Klf6", "Ehd1", "Junb", "Cxcl2", "Pnrc1", "Bcl3", "Cebpd", "Birc3", "Irf1", "Rnf19b", "Ppp1r15a", "Cdkn1a", "Gbp2b", "Tlr4", "Timp2", "Itgam", "Gbp2", "Tnfaip3", "Sdc4", "Gadd45b", "Plaur", "Cflar", "Nampt", "Ifngr1", "Il1b", "Zfp36", "C3", "Icam1", "Sod2", "Txnip", "Ppard", "Sqstm1", "B4galt5", "Tlr2", "Tap1", "Hif1a", "Egr1", "Cd47", "Ncf1", "Ctss", "Ankrd33b", "Stat1", "Ifnar2", "Fos", "Fas", "Cxcl1", "Bcl2l1", "Maff", "Tnfaip2", "Stx11", "Ddit4", "Nfkbib", "Cebpa", "Rela", "Noct", "Tank", "Optn", "Nedd9", "Dram1", "Nfkb2", "Tnf", "Rsad2", "Irak2", "Nfkbie", "Hivep2", "Pmaip1", "Znfx1", "Irf7", "Ikbke", "Tifa", "Il15", "Jun", "Traf3", "Ccl2", "Parp12", "Ddx58", "Pla2g4a", "Ebi3", "Ccl5", "Ptgs2", "Ahr", "Ampd3", "G0s2", "Cd83", "Il1rn")
+
+ccl12_targets <- c("Icam1")
+
+cxcl12_targets <- c("Hmox1", "Tgfbi", "Trib1", "Cdkn1a", "Pim1", "Plaur", "Mvp", "Rgl1", "Cd44", "B4galt5", "Serpinb8", "Rhob", "Anxa1", "Emp1", "Ddit4", "Egr2", "Sgk1", "Jun", "Ddit3", "Pfkfb4", "Gadd45a")
 
 osm_targets <- c("Cebpd", "Junb", "Cdkn1a", "Ier3", "Egr1", "Osmr", "Serpina3n", "Ifitm3", "B2m", "Socs3", "Pim1", "Ifitm2", "Stat3", "Il6ra", "Fosl2", "Txnip", "Il4ra", "Trib1", "Casp4", "Adm", "C1s1", "Gadd45b", "Xbp1", "Tgm2", "Vwa5a", "C1ra", "Carhsp1", "Nampt", "Tnfrsf1a", "Dpp4")
 ```
@@ -1142,13 +1179,22 @@ orthologs <- read.table("C:/Users/nwb_l/Documents/r_projects/human_mouse_ortholo
 orthologs_hc <- orthologs %>%
   filter(orthology_confidence == 1)
 
-# Map mouse genes to human for Tnf/Ccl12/Cxcl12 targets
-tnf_ccl2_cxcl12_targets_human <- orthologs_hc %>%
-  filter(mouse_gene_name %in% tnf_ccl12_cxcl12_targets) %>%
+# Map mouse genes to human genes
+tnf_targets_human <- orthologs_hc %>%
+  filter(mouse_gene_name %in% tnf_targets) %>%
   pull(human_gene_name) %>% 
   unique()   # remove duplicates
 
-# Map mouse genes to human for OSM targets
+ccl2_targets_human <- orthologs_hc %>%
+  filter(mouse_gene_name %in% ccl12_targets) %>%
+  pull(human_gene_name) %>% 
+  unique()   # remove duplicates
+
+cxcl12_targets_human <- orthologs_hc %>%
+  filter(mouse_gene_name %in% cxcl12_targets) %>%
+  pull(human_gene_name) %>% 
+  unique()   # remove duplicates
+
 osm_targets_human <- orthologs_hc %>%
   filter(mouse_gene_name %in% osm_targets) %>%
   pull(human_gene_name) %>% 
@@ -1156,73 +1202,905 @@ osm_targets_human <- orthologs_hc %>%
 ```
 
 
-## Score conditions for tnf_ccl2_cxcl12_targets in immune cells
 
-### Filter for immune cells with TNF, CCL12, CXCL12 receptors in mice
+# TNF target genes in Monocytes/macrophages
 
-```{r, include=FALSE}
-Idents(pdac_muscle) <- "seurat_clusters"
-
-pdac_muscle_immune <- subset(pdac_muscle, idents = c("Monocytes/macrophages", "Neutrophils"))
-```
-
-
-```{r, include=FALSE}
-tnf_ccl2_cxcl12_targets_score <- AddModuleScore_UCell(pdac_muscle_immune, features = list(tnf_ccl2_cxcl12_targets_human), name = "tnf_ccl2_cxcl12_targets_score")
-
-means_tnf_ccl2_cxcl12_targets_score <- tnf_ccl2_cxcl12_targets_score@meta.data %>%
-  group_by(orig.ident) %>%
-  summarise(average_tnf_ccl2_cxcl12_targets_score = mean(signature_1tnf_ccl2_cxcl12_targets_score, na.rm = TRUE))
-```
-
-```{r}
-print(means_tnf_ccl2_cxcl12_targets_score)
-```
-
-```{r}
-VlnPlot(tnf_ccl2_cxcl12_targets_score, features = "signature_1tnf_ccl2_cxcl12_targets_score", group.by = "orig.ident", pt.size = 0) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
-  labs(x = NULL, y = "TNF, CCL2, CXCL12 Targets Score", title = NULL) +
-  geom_hline(yintercept = 0, linetype = "solid", color = "black")
-```
-
-
-## Score conditions for osm_targets in non-immune cells
-
-### Filter for non-immune cells with OSM receptor in mice
+### DEGs by condition
 
 ```{r, include=FALSE}
 Idents(pdac_muscle) <- "seurat_clusters"
 
-pdac_muscle_non_immune <- subset(pdac_muscle, idents = c("Endothelial cells", "vSMCs/pericytes", "FAPs"))
+pdac_mono_macro <- subset(pdac_muscle, idents = "Monocytes/macrophages")
+
+Idents(pdac_mono_macro) <- "orig.ident"
+
+DEGs_tnf_mono_macro_ws_v_ctl <- FindMarkers(pdac_mono_macro, ident.1 = "PDAC_WS", ident.2 = "PDAC_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+DEGs_tnf_mono_macro_cac_v_ctl <- FindMarkers(pdac_mono_macro, ident.1 = "PDAC_cachectic", ident.2 = "PDAC_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+DEGs_tnf_mono_macro_cac_v_ws <- FindMarkers(pdac_mono_macro, ident.1 = "PDAC_cachectic", ident.2 = "PDAC_WS", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
+
+DEGs_tnf_mono_macro_ws_v_ctl <- DEGs_tnf_mono_macro_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+DEGs_tnf_mono_macro_cac_v_ctl <- DEGs_tnf_mono_macro_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+DEGs_tnf_mono_macro_cac_v_ws <- DEGs_tnf_mono_macro_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
 ```
 
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
+
+```{r}
+# Filter each DEG table for significant upregulation
+tnf_sig_cac_vs_ctl <- DEGs_tnf_mono_macro_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+    p_val_adj < 0.05) %>%
+  rownames()
+
+tnf_sig_cac_vs_ws <- DEGs_tnf_mono_macro_cac_v_ws %>%
+  filter(avg_log2FC > 0.2,
+    p_val_adj < 0.05) %>%
+  rownames()
+
+tnf_sig_ws_vs_ctl <- DEGs_tnf_mono_macro_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+    p_val_adj < 0.05) %>%
+  rownames()
+
+# Genes that are significant in both cac comparisons but NOT in WS vs CTL
+cachectic_tnf_mono_macro_genes <- intersect(tnf_sig_cac_vs_ctl, tnf_sig_cac_vs_ws) %>%
+  setdiff(tnf_sig_ws_vs_ctl)
+
+# Show result
+cachectic_tnf_mono_macro_genes
+```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
+
+```{r}
+intersect(tnf_targets_human, cachectic_tnf_mono_macro_genes)
+```
+
+
+
+# TNF target genes in Neutrophils
+
+### DEGs by condition
 
 ```{r, include=FALSE}
-osm_targets_score <- AddModuleScore_UCell(pdac_muscle_non_immune, features = list(osm_targets_human), name = "osm_targets_score")
+Idents(pdac_muscle) <- "seurat_clusters"
 
-means_osm_targets_score <- osm_targets_score@meta.data %>%
-  group_by(orig.ident) %>%
-  summarise(average_osm_targets_score = mean(signature_1osm_targets_score, na.rm = TRUE))
+pdac_neutro <- subset(pdac_muscle, idents = "Neutrophils")
+
+Idents(pdac_neutro) <- "orig.ident"
+
+DEGs_tnf_neutro_ws_v_ctl <- FindMarkers(
+  pdac_neutro,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_tnf_neutro_cac_v_ctl <- FindMarkers(
+  pdac_neutro,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_tnf_neutro_cac_v_ws <- FindMarkers(
+  pdac_neutro,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_tnf_neutro_ws_v_ctl <- DEGs_tnf_neutro_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_tnf_neutro_cac_v_ctl <- DEGs_tnf_neutro_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_tnf_neutro_cac_v_ws <- DEGs_tnf_neutro_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
 ```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
 
 ```{r}
-print(means_osm_targets_score)
+# Filter each DEG table for significant upregulation
+tnf_sig_cac_vs_ctl_neutro <- DEGs_tnf_neutro_cac_v_ctl %>%
+  filter(
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
+  ) %>%
+  rownames()
+
+tnf_sig_cac_vs_ws_neutro <- DEGs_tnf_neutro_cac_v_ws %>%
+  filter(
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
+  ) %>%
+  rownames()
+
+tnf_sig_ws_vs_ctl_neutro <- DEGs_tnf_neutro_ws_v_ctl %>%
+  filter(
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
+  ) %>%
+  rownames()
+
+# Genes that are significant in both CAC comparisons but NOT in WS vs CTL
+cachectic_tnf_neutro_genes <- intersect(
+  tnf_sig_cac_vs_ctl_neutro,
+  tnf_sig_cac_vs_ws_neutro
+) %>%
+  setdiff(tnf_sig_ws_vs_ctl_neutro)
+
+# Show result
+cachectic_tnf_neutro_genes
 ```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
 
 ```{r}
-VlnPlot(osm_targets_score, features = "signature_1osm_targets_score", group.by = "orig.ident", pt.size = 0) +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45)) +
-  labs(x = NULL, y = "OSM Targets Score", title = NULL) +
-  geom_hline(yintercept = 0, linetype = "solid", color = "black")
+intersect(tnf_targets_human, cachectic_tnf_neutro_genes)
 ```
 
+### Check log2FC and p_val_adj
+
+```{r}
+rbind(
+  "WS vs CTL" = DEGs_tnf_neutro_ws_v_ctl["C3", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_tnf_neutro_cac_v_ctl["C3", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_tnf_neutro_cac_v_ws["C3", c("avg_log2FC", "p_val_adj")]
+)
+```
+
+### Plot
+
+```{r}
+VlnPlot(
+  pdac_neutro,
+  features = "C3",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_neutro),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "C3",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+```
+
+
+
+# CCL2 (Ccl12) target genes in Monocytes/macrophages
+
+### DEGs by condition
+
+```{r, include=FALSE}
+Idents(pdac_mono_macro) <- "orig.ident"
+
+DEGs_ccl2_mono_macro_ws_v_ctl <- FindMarkers(
+  pdac_mono_macro,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_ccl2_mono_macro_cac_v_ctl <- FindMarkers(
+  pdac_mono_macro,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_ccl2_mono_macro_cac_v_ws <- FindMarkers(
+  pdac_mono_macro,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_ccl2_mono_macro_ws_v_ctl <- DEGs_ccl2_mono_macro_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_ccl2_mono_macro_cac_v_ctl <- DEGs_ccl2_mono_macro_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_ccl2_mono_macro_cac_v_ws <- DEGs_ccl2_mono_macro_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
+
+```{r}
+# Filter each DEG table for significant upregulation
+ccl2_sig_cac_vs_ctl <- DEGs_ccl2_mono_macro_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+ccl2_sig_cac_vs_ws <- DEGs_ccl2_mono_macro_cac_v_ws %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+ccl2_sig_ws_vs_ctl <- DEGs_ccl2_mono_macro_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+# Genes that are significant in both CAC comparisons but NOT in WS vs CTL
+cachectic_ccl2_mono_macro_genes <- intersect(
+  ccl2_sig_cac_vs_ctl,
+  ccl2_sig_cac_vs_ws
+) %>%
+  setdiff(ccl2_sig_ws_vs_ctl)
+
+# Show result
+cachectic_ccl2_mono_macro_genes
+```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
+
+```{r}
+intersect(ccl2_targets_human, cachectic_ccl2_mono_macro_genes)
+```
+
+
+
+# CXCL12 target genes in Neutrophils
+
+### DEGs by condition
+
+```{r, include=FALSE}
+Idents(pdac_neutro) <- "orig.ident"
+
+DEGs_cxcl12_neutro_ws_v_ctl <- FindMarkers(
+  pdac_neutro,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_cxcl12_neutro_cac_v_ctl <- FindMarkers(
+  pdac_neutro,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_cxcl12_neutro_cac_v_ws <- FindMarkers(
+  pdac_neutro,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_cxcl12_neutro_ws_v_ctl <- DEGs_cxcl12_neutro_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_cxcl12_neutro_cac_v_ctl <- DEGs_cxcl12_neutro_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_cxcl12_neutro_cac_v_ws <- DEGs_cxcl12_neutro_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
+
+```{r}
+# Filter each DEG table for significant upregulation
+cxcl12_sig_cac_vs_ctl <- DEGs_cxcl12_neutro_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+cxcl12_sig_cac_vs_ws <- DEGs_cxcl12_neutro_cac_v_ws %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+cxcl12_sig_ws_vs_ctl <- DEGs_cxcl12_neutro_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+# Genes that are significant in both CAC comparisons but NOT in WS vs CTL
+cachectic_cxcl12_neutro_genes <- intersect(
+  cxcl12_sig_cac_vs_ctl,
+  cxcl12_sig_cac_vs_ws
+) %>%
+  setdiff(cxcl12_sig_ws_vs_ctl)
+
+# Show result
+cachectic_cxcl12_neutro_genes
+```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
+
+```{r}
+intersect(cxcl12_targets_human, cachectic_cxcl12_neutro_genes)
+```
+
+
+
+# OSM target genes in Endothelial cells
+
+### DEGs by condition
+
+```{r, include=FALSE}
+Idents(pdac_muscle) <- "seurat_clusters"
+
+pdac_ec <- subset(pdac_muscle, idents = "Endothelial cells")
+
+Idents(pdac_ec) <- "orig.ident"
+
+DEGs_osm_ec_ws_v_ctl <- FindMarkers(
+  pdac_ec,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_ec_cac_v_ctl <- FindMarkers(
+  pdac_ec,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_ec_cac_v_ws <- FindMarkers(
+  pdac_ec,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_ec_ws_v_ctl <- DEGs_osm_ec_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_osm_ec_cac_v_ctl <- DEGs_osm_ec_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_osm_ec_cac_v_ws <- DEGs_osm_ec_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
+
+```{r}
+# Filter each DEG table for significant upregulation
+osm_sig_cac_vs_ctl <- DEGs_osm_ec_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+osm_sig_cac_vs_ws <- DEGs_osm_ec_cac_v_ws %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+osm_sig_ws_vs_ctl <- DEGs_osm_ec_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+# Genes that are significant in both CAC comparisons but NOT in WS vs CTL
+cachectic_osm_ec_genes <- intersect(
+  osm_sig_cac_vs_ctl,
+  osm_sig_cac_vs_ws
+) %>%
+  setdiff(osm_sig_ws_vs_ctl)
+
+# Show result
+cachectic_osm_ec_genes
+```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
+
+```{r}
+intersect(osm_targets_human, cachectic_osm_ec_genes)
+```
+
+### Check log2FC and p_val_adj
+
+```{r}
+rbind(
+  "WS vs CTL" = DEGs_osm_ec_ws_v_ctl["TGM2", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_osm_ec_cac_v_ctl["TGM2", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_osm_ec_cac_v_ws["TGM2", c("avg_log2FC", "p_val_adj")]
+)
+```
+
+### Plot
+
+```{r}
+VlnPlot(
+  pdac_ec,
+  features = "TGM2",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_neutro),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "TGM2",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+```
+
+
+
+# OSM target genes in vSMCs/pericytes
+
+### DEGs by condition
+
+```{r, include=FALSE}
+Idents(pdac_muscle) <- "seurat_clusters"
+
+pdac_vSMC_peri <- subset(pdac_muscle, idents = "vSMCs/pericytes")
+
+Idents(pdac_vSMC_peri) <- "orig.ident"
+
+DEGs_osm_vSMC_peri_ws_v_ctl <- FindMarkers(
+  pdac_vSMC_peri,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_vSMC_peri_cac_v_ctl <- FindMarkers(
+  pdac_vSMC_peri,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_vSMC_peri_cac_v_ws <- FindMarkers(
+  pdac_vSMC_peri,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_vSMC_peri_ws_v_ctl <- DEGs_osm_vSMC_peri_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_osm_vSMC_peri_cac_v_ctl <- DEGs_osm_vSMC_peri_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_osm_vSMC_peri_cac_v_ws <- DEGs_osm_vSMC_peri_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
+
+```{r}
+# Filter each DEG table for significant upregulation
+osm_sig_cac_vs_ctl <- DEGs_osm_vSMC_peri_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+osm_sig_cac_vs_ws <- DEGs_osm_vSMC_peri_cac_v_ws %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+osm_sig_ws_vs_ctl <- DEGs_osm_vSMC_peri_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+# Genes that are significant in both CAC comparisons but NOT in WS vs CTL
+cachectic_osm_vSMC_peri_genes <- intersect(
+  osm_sig_cac_vs_ctl,
+  osm_sig_cac_vs_ws
+) %>%
+  setdiff(osm_sig_ws_vs_ctl)
+
+# Show result
+cachectic_osm_vSMC_peri_genes
+```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
+
+```{r}
+intersect(osm_targets_human, cachectic_osm_vSMC_peri_genes)
+```
+
+
+
+# OSM target genes in FAPs
+
+### DEGs by condition
+
+```{r, include=FALSE}
+Idents(pdac_muscle) <- "seurat_clusters"
+
+pdac_faps <- subset(pdac_muscle, idents = "FAPs")
+
+Idents(pdac_faps) <- "orig.ident"
+
+DEGs_osm_faps_ws_v_ctl <- FindMarkers(
+  pdac_faps,
+  ident.1 = "PDAC_WS",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_faps_cac_v_ctl <- FindMarkers(
+  pdac_faps,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_CTL",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_faps_cac_v_ws <- FindMarkers(
+  pdac_faps,
+  ident.1 = "PDAC_cachectic",
+  ident.2 = "PDAC_WS",
+  logfc.threshold = 0,
+  min.pct = 0.10,
+  verbose = FALSE
+)
+
+DEGs_osm_faps_ws_v_ctl <- DEGs_osm_faps_ws_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_osm_faps_cac_v_ctl <- DEGs_osm_faps_cac_v_ctl %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+
+DEGs_osm_faps_cac_v_ws <- DEGs_osm_faps_cac_v_ws %>% 
+  mutate(log10_p_val_adj = -log10(p_val_adj))
+```
+
+
+### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL
+
+```{r}
+# Filter each DEG table for significant upregulation
+osm_sig_cac_vs_ctl <- DEGs_osm_faps_cac_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+osm_sig_cac_vs_ws <- DEGs_osm_faps_cac_v_ws %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+osm_sig_ws_vs_ctl <- DEGs_osm_faps_ws_v_ctl %>%
+  filter(avg_log2FC > 0.2,
+         p_val_adj < 0.05) %>%
+  rownames()
+
+# Genes that are significant in both CAC comparisons but NOT in WS vs CTL
+cachectic_osm_faps_genes <- intersect(
+  osm_sig_cac_vs_ctl,
+  osm_sig_cac_vs_ws
+) %>%
+  setdiff(osm_sig_ws_vs_ctl)
+
+# Show result
+cachectic_osm_faps_genes
+```
+
+### Check to see if any genes are up in cachexia that line up with the target genes
+
+```{r}
+intersect(osm_targets_human, cachectic_osm_faps_genes)
+```
+
+### Check log2FC and p_val_adj
+
+```{r}
+rbind(
+  "WS vs CTL" = DEGs_osm_faps_ws_v_ctl["FOSL2", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_osm_faps_cac_v_ctl["FOSL2", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_osm_faps_cac_v_ws["FOSL2", c("avg_log2FC", "p_val_adj")]
+)
+
+rbind(
+  "WS vs CTL" = DEGs_osm_faps_ws_v_ctl["EGR1", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_osm_faps_cac_v_ctl["EGR1", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_osm_faps_cac_v_ws["EGR1", c("avg_log2FC", "p_val_adj")]
+)
+
+rbind(
+  "WS vs CTL" = DEGs_osm_faps_ws_v_ctl["ADM", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_osm_faps_cac_v_ctl["ADM", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_osm_faps_cac_v_ws["ADM", c("avg_log2FC", "p_val_adj")]
+)
+
+rbind(
+  "WS vs CTL" = DEGs_osm_faps_ws_v_ctl["JUNB", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_osm_faps_cac_v_ctl["JUNB", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_osm_faps_cac_v_ws["JUNB", c("avg_log2FC", "p_val_adj")]
+)
+
+rbind(
+  "WS vs CTL" = DEGs_osm_faps_ws_v_ctl["CEBPD", c("avg_log2FC", "p_val_adj")],
+  "CAC vs CTL" = DEGs_osm_faps_cac_v_ctl["CEBPD", c("avg_log2FC", "p_val_adj")],
+  "CAC vs WS" = DEGs_osm_faps_cac_v_ws["CEBPD", c("avg_log2FC", "p_val_adj")]
+)
+```
+
+### Plot
+
+```{r}
+# FOSL2
+
+VlnPlot(
+  pdac_faps,
+  features = "FOSL2",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_neutro),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "FOSL2",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+
+
+
+# ERG1
+
+VlnPlot(
+  pdac_faps,
+  features = "EGR1",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_faps),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "EGR1",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+
+
+
+# ADM
+
+VlnPlot(
+  pdac_faps,
+  features = "ADM",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_faps),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "ADM",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+
+
+
+# JUNB
+
+VlnPlot(
+  pdac_faps,
+  features = "JUNB",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_faps),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "JUNB",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+
+
+
+# CEBPD
+
+VlnPlot(
+  pdac_faps,
+  features = "CEBPD",
+  group.by = "orig.ident",
+  assay = DefaultAssay(pdac_faps),
+  layer = "data",
+  pt.size = 1
+) +
+  labs(
+    title = "CEBPD",
+    y = "Expression",
+    x = NULL
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "italic",
+      size = 16
+    ),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  ) +
+  scale_fill_manual(values = c(
+    "PDAC_CTL" = "white",
+    "PDAC_WS" = "lightgrey",
+    "PDAC_cachectic" = "#666666"
+  )) +
+  coord_cartesian(ylim = c(0, 5))
+```
+
+
+
+# Pre-revisions
 
 ## Heatmap of DEGs for each gene in tnf_ccl2_cxcl12_targets_human
 
 ### DEGs by condition
 
 ```{r, include=FALSE}
+Idents(pdac_muscle) <- "seurat_clusters"
+
+pdac_muscle_immune <- subset(pdac_muscle, idents = c("Monocytes/macrophages", "Neutrophils"))
+
 Idents(pdac_muscle_immune) <- "orig.ident"
 
 DEGs_immune_ws_v_ctl <- FindMarkers(pdac_muscle_immune, ident.1 = "PDAC_WS", ident.2 = "PDAC_CTL", logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
@@ -1236,7 +2114,6 @@ DEGs_immune_cac_v_ctl <- DEGs_immune_cac_v_ctl %>%
 DEGs_immune_cac_v_ws <- DEGs_immune_cac_v_ws %>% 
   mutate(log10_p_val_adj = -log10(p_val_adj))
 ```
-
 
 ### See which genes are up in cachectic vs. CTL and cachectic vs. WS but not WS vs. CTL (no filter by p_val because too few cells, filtered by avg_log2FC > 0.2)
 
@@ -1320,14 +2197,14 @@ Heatmap(
   
   # Row names
   row_names_gp = gpar(fontsize = 10),
-  
   border = TRUE,
   column_title = "TNF/CCL2/CXCL12 Target Genes (avg_log2FC)"
 )
 ```
 
 
-## Heatmap of DEGs for each gene in osm_targets_human
+
+# Heatmap of DEGs for each gene in osm_targets_human
 
 ### DEGs by condition
 
