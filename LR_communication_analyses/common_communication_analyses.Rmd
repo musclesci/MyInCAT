@@ -85,29 +85,6 @@ common_receptors
 ```
 
 
-## Venn diagram of common receptors
-
-```{r}
-venn_receptors <- list(
-  LLC = LLC_receptors,
-  B16 = B16_receptors,
-  C26 = C26_receptors,
-  KPC = KPC_receptors
-)
-
-ggvenn(venn_receptors,
-       fill_color = c("#CC79A7", "#009E73", "#E69F00", "#0072B2"),
-       stroke_color = "black",
-       text_size = 5,
-       show_percentage = FALSE) +
-  ggtitle("Common Receptors") +
-  theme(plot.title = element_text(hjust = 0.5,
-                                  size = 16,
-                                  face = "bold"))
-```
-
-
-
 # Read in the list of ligands from bulkRNAseq of each tumour
 
 ```{r, include=FALSE}
@@ -145,70 +122,6 @@ common_ligands <- Reduce(intersect, list(
 common_ligands
 ```
 
-
-
-# Run KEGG pathway analysis on the receptors that are upregulated in tumour-bearing muscle
-
-## Get DEGs of common receptors from individual analyses
-
-```{r, include=FALSE}
-LLC_sig_receptors <- list("Cd47", "Adgrg1", "Adipor1", "Cd44", "Ackr3", "Tlr4", "Itga5", "Sdc4", "Ramp2", "Sorl1", "Flt1", "Il1rap", "Axl")
-  
-B16_sig_receptors <- list("Cd36", "Ednrb", "Fas", "Adipor2", "Il4ra", "Flt1", "Adgrg1", "Igf1r", "Mmp14", "Ncl", "Ramp2", "Ackr3", "Fzd4", "Fgfr1", "Lifr", "Abca1", "Plxna2", "Tnfrsf1a", "Plaur", "Sdc4", "Bmpr2", "Npy1r", "Ghr")
-
-C26_sig_receptors <- list("Cd36", "Flt1", "Plaur", "Adgrg1", "Cdh5", "Adipor2", "Itga6", "Il7r", "Cx3cr1", "Itga1", "Plxna2", "Igf1r", "Nrp1", "Il1r1", "Cd44", "Tgfbr1", "Sdc3", "Mmp14", "Sdc4", "Il6st", "Sorl1", "Lifr", "Il1rap", "Tnfrsf12a", "Tlr4", "Adipor1")
-
-KPP_KIC_sig_receptors <- list("Egfr", "Lrp1", "Tlr4", "Fgfr1", "Abca1", "Igf1r", "Mmp14", "Axl", "Cd36", "Itgb1", "Pdgfra", "Cd44", "Ackr3", "Flt1", "Nrp1", "Vldlr", "Itgb5", "Bmpr2", "Nrp2", "Itga5", "Cd47", "Sdc2", "Plxna2", "Il6st", "Bmpr1a", "Cdh5", "Fgfr2", "Il1r1", "Kdr", "Acvr2a", "Pard3", "Sdc4", "Itga1", "Tgfbr2", "Il11ra1", "Lrp6", "Tgfbr1", "Tnfrsf1a", "Itgav", "Igf2r", "Acvr1")
-```
-
-
-## Common (significantly expressed) receptors
-
-```{r}
-common_sig_receptors <- Reduce(intersect, list(
-  LLC_sig_receptors,
-  B16_sig_receptors,
-  C26_sig_receptors,
-  KPP_KIC_sig_receptors
-))
-
-common_sig_receptors
-```
-
-
-## Venn diagram of common (significantly expressed) receptors
-
-```{r}
-venn_sig_receptors <- list(
-  LLC = LLC_sig_receptors,
-  B16 = B16_sig_receptors,
-  C26 = C26_sig_receptors,
-  KPP_KIC = KPP_KIC_sig_receptors
-)
-
-ggvenn(venn_sig_receptors,
-       fill_color = c("#CC79A7", "#009E73", "#E69F00", "#0072B2"),
-       stroke_color = "black",
-       text_size = 5,
-       show_percentage = FALSE) +
-  ggtitle("Common (significantly expressed) Receptors") +
-  theme(plot.title = element_text(hjust = 0.5,
-                                  size = 16,
-                                  face = "bold"))
-```
-
-#### NOTE - since there are only 2 that are common across all of them, going to do DEGs between all tumour-bearing muscle to get KEGG terms. May be skewed by highly expressed receptors in one model and by the number of cells in each condition, but there is more to work with.
-
-
-## KEGG pathway analysis
-### Get DEGs of receptors in tumour-bearing muscle
-
-```{r, include=FALSE}
-Idents(sc_combined) <- "orig.ident"
-
-DEGs_sc_combined <- FindMarkers(sc_combined, ident.1 = c("Agca_snLLC_LLC", "Brown_scLLC_2w", "Brown_scLLC_2.5w", "Brown_scLLC_3.5w", "Kim_scB16F10_B16F10", "Pryce_scC26_C26", "Pryce_scKPP_KPP", "Zhang_snKIC_KIC"), ident.2 = c("Agca_snLLC_CTL", "Brown_scLLC_CTL", "Kim_scB16F10_CTL", "Pryce_scC26_CTL", "Pryce_scKPP_CTL", "Zhang_snKIC_CTL"), logfc.threshold = 0, min.pct = 0.10, verbose = FALSE)
-```
-
 ### Subset DEG for p_val_adj < 0.05 and avg_log2FC > 0.2 and in common_receptors
 
 ```{r}
@@ -220,56 +133,12 @@ DEGs_sc_combined <- DEGs_sc_combined[rownames(DEGs_sc_combined) %in% common_rece
 rownames(DEGs_sc_combined)
 ```
 
-### KEGG pathway analysis
-
-```{r, include=FALSE}
-### Convert gene symbols to Entrez IDs
-DEGs_sc_combined_gene_names <- rownames(DEGs_sc_combined)
-
-DEGs_sc_combined_IDs <- bitr(DEGs_sc_combined_gene_names,
-                  fromType = "SYMBOL",
-                  toType   = "ENTREZID",
-                  OrgDb    = org.Mm.eg.db)
-
-DEGs_sc_combined_kegg <- enrichKEGG(
-  gene         = DEGs_sc_combined_IDs$ENTREZID,
-  organism     = "mmu",
-  keyType      = "kegg",
-  pvalueCutoff = 0.05
-)
-
-write.csv(DEGs_sc_combined_kegg, file = "kegg_common_receptors.csv", row.names = TRUE)
-```
-
-### Visualize KEGG pathways
-
-```{r}
-sc_combined_pathways <- c(1:18)
-sc_combined_kegg_signaling <- DEGs_sc_combined_kegg[sc_combined_pathways, ]
-
-sc_combined_kegg_signaling$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", sc_combined_kegg_signaling$Description)
-
-ggplot(sc_combined_kegg_signaling, aes(x = FoldEnrichment, 
-                           y = reorder(Description, FoldEnrichment),
-                           size = Count, 
-                           color = p.adjust)) +
-  geom_point() +
-  scale_color_gradient(low = "blue", high = "red", name = "adj. p-value") +
-  labs(x = "Fold Enrichment", y = NULL, 
-       title = "UP KEGG Tumour-bearing muscle") +
-  theme_minimal() +
-  theme(
-    axis.line = element_line(color = "black"),
-    axis.ticks = element_line(color = "black")
-  )
-```
-
 
 
 # Remove unused objects
 
 ```{r, include=FALSE}
-rm(B16_receptors, B16_sig_receptors, C26_receptors, C26_sig_receptors, common_sig_receptors, DEGs_sc_combined, DEGs_sc_combined_IDs, DEGs_sc_combined_gene_names, DEGs_sc_combined_kegg, kegg_category, KPC_receptors, KPP_KIC_sig_receptors, LLC_receptors, LLC_sig_receptors, sc_combined_kegg_signaling, venn_receptors, venn_sig_receptors, sc_combined_pathways)
+rm(B16_receptors, B16_sig_receptors, C26_receptors, C26_sig_receptors, common_sig_receptors, DEGs_sc_combined, DEGs_sc_combined_gene_names, KPC_receptors, KPP_KIC_sig_receptors, LLC_receptors, LLC_sig_receptors)
 ```
 
 
