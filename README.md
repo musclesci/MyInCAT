@@ -6,3 +6,6 @@ Brown, A., Lafond, I., De Lisio, M., Wiper-Bergeron, N. (2026). Tumour-secreted 
 
 Link to MyInCAT web resource: 
 myincat.org
+
+Integrated seurat and cellchat objects on Zenodo:
+10.5281/zenodo.19208745
