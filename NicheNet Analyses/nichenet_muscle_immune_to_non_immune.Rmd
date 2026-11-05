@@ -311,6 +311,23 @@ p_ligand_target_network = vis_ligand_target %>%
 p_ligand_target_network
 ```
 
+### write.csv of ligands x predicted target genes
+
+```{r, include=FALSE}
+write.csv(
+  vis_ligand_target,
+  file = "immune_to_non_immune_regulatory_potential.csv",
+  row.names = TRUE
+)
+```
+
+
+### List of target genes
+
+```{r}
+colnames(vis_ligand_target)
+```
+
 ### List of average and sum regulatory potential per ligand
 
 ```{r}
@@ -607,7 +624,193 @@ DotPlot(muscle_non_immune, features = c("Itgb1", "Sdc4", "Cd36", "Cd47"), idents
 ```
 
 
-## Check change in receptor expression with cachexia
+
+# Check receptor expression
+
+## Subset cell types
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+satellite_cells <- subset(sc_combined, idents = "Satellite cells")
+endothelial_cells <- subset(sc_combined, idents = "Endothelial cells")
+vSMCs <- subset(sc_combined, idents = "vSMCs")
+pericytes <- subset(sc_combined, idents = "Pericytes")
+FAPs <- subset(sc_combined, idents = "FAPs")
+tenocytes <- subset(sc_combined, idents = "Tenocytes")
+```
+
+
+## Itgb1 found to be expressed in Endothelial cells, vSMCs, Pericytes, Tenocytes
+
+```{r, include=FALSE}
+endothelial_cells_Itgb1 <- AverageExpression(
+  endothelial_cells,
+  features = "Itgb1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+vSMCs_Itgb1 <- AverageExpression(
+  vSMCs,
+  features = "Itgb1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+pericytes_Itgb1 <- AverageExpression(
+  pericytes,
+  features = "Itgb1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+tenocytes_Itgb1 <- AverageExpression(
+  tenocytes,
+  features = "Itgb1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Sdc4 found to be expressed in Satellite cells, Tenocytes
+
+```{r, include=FALSE}
+satellite_cells_Sdc4 <- AverageExpression(
+  satellite_cells,
+  features = "Sdc4",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+tenocytes_Sdc4 <- AverageExpression(
+  tenocytes,
+  features = "Sdc4",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Cd36 found to be expressed in Endothelial cells, vSMCs, Pericytes
+
+```{r, include=FALSE}
+endothelial_cells_Cd36 <- AverageExpression(
+  endothelial_cells,
+  features = "Cd36",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+vSMCs_Cd36 <- AverageExpression(
+  vSMCs,
+  features = "Cd36",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+pericytes_Cd36 <- AverageExpression(
+  pericytes,
+  features = "Cd36",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Cd47 found to be expressed in Endothelial cells, Pericytes, FAPs, Tenocytes
+
+```{r, include=FALSE}
+endothelial_cells_Cd47 <- AverageExpression(
+  endothelial_cells,
+  features = "Cd47",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+pericytes_Cd47 <- AverageExpression(
+  pericytes,
+  features = "Cd47",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+FAPs_Cd47 <- AverageExpression(
+  FAPs,
+  features = "Cd47",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+tenocytes_Cd47 <- AverageExpression(
+  tenocytes,
+  features = "Cd47",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## write.csv
+
+```{r, include=FALSE}
+write.csv(endothelial_cells_Itgb1,
+          "endothelial_cells_Itgb1.csv",
+          row.names = TRUE)
+
+write.csv(vSMCs_Itgb1,
+          "vSMCs_Itgb1.csv",
+          row.names = TRUE)
+
+write.csv(pericytes_Itgb1,
+          "pericytes_Itgb1.csv",
+          row.names = TRUE)
+
+write.csv(tenocytes_Itgb1,
+          "tenocytes_Itgb1.csv",
+          row.names = TRUE)
+
+write.csv(satellite_cells_Sdc4,
+          "satellite_cells_Sdc4.csv",
+          row.names = TRUE)
+
+write.csv(tenocytes_Sdc4,
+          "tenocytes_Sdc4.csv",
+          row.names = TRUE)
+
+write.csv(endothelial_cells_Cd36,
+          "endothelial_cells_Cd36.csv",
+          row.names = TRUE)
+
+write.csv(vSMCs_Cd36,
+          "vSMCs_Cd36.csv",
+          row.names = TRUE)
+
+write.csv(pericytes_Cd36,
+          "pericytes_Cd36.csv",
+          row.names = TRUE)
+
+write.csv(endothelial_cells_Cd47,
+          "endothelial_cells_Cd47.csv",
+          row.names = TRUE)
+
+write.csv(pericytes_Cd47,
+          "pericytes_Cd47.csv",
+          row.names = TRUE)
+
+write.csv(FAPs_Cd47,
+          "FAPs_Cd47.csv",
+          row.names = TRUE)
+
+write.csv(tenocytes_Cd47,
+          "tenocytes_Cd47.csv",
+          row.names = TRUE)
+```
+
+
+
+# Receptors expression in combined cell types (pre-revisions)
 
 ### Kruskal-Wallis test to compare all 3 groups
 

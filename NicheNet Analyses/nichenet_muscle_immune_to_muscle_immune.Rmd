@@ -305,6 +305,22 @@ p_ligand_target_network = vis_ligand_target %>%
 p_ligand_target_network
 ```
 
+### write.csv of ligands x predicted target genes
+
+```{r, include=FALSE}
+write.csv(
+  vis_ligand_target,
+  file = "immune_to_immune_regulatory_potential.csv",
+  row.names = TRUE
+)
+```
+
+### List of target genes
+
+```{r}
+colnames(vis_ligand_target)
+```
+
 ### List of average and sum regulatory potential per ligand
 
 ```{r}
@@ -595,7 +611,73 @@ DotPlot(muscle_immune, features = c("Tgfbr1", "Tgfbr2", "Ccr2"), idents = c("Mon
 ```
 
 
-## Check change in receptor expression with cachexia
+
+# Check receptor expression
+
+## Subset cell types
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+monocytes <- subset(sc_combined, idents = "Monocytes")
+macrophages <- subset(sc_combined, idents = "Macrophages")
+```
+
+
+## Tgfbr1 found to be expressed in Monocytes and Macrophages
+
+```{r, include=FALSE}
+monocytes_Tgfbr1 <- AverageExpression(
+  monocytes,
+  features = "Tgfbr1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Tgfbr1 <- AverageExpression(
+  macrophages,
+  features = "Tgfbr1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Tgfbr2 found to be expressed in Macrophages and NK cells
+
+```{r, include=FALSE}
+macrophages_Tgfbr2 <- AverageExpression(
+  macrophages,
+  features = "Tgfbr2",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## write.csv
+
+```{r, include=FALSE}
+write.csv(monocytes_Tgfbr1,
+          "monocytes_Tgfbr1.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Tgfbr1,
+          "macrophages_Tgfbr1.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Tgfbr2,
+          "macrophages_Tgfbr2.csv",
+          row.names = TRUE)
+
+write.csv(nk_cells_Tgfbr2,
+          "nk_cells_Tgfbr2.csv",
+          row.names = TRUE)
+```
+
+
+
+# Receptors expression in combined cell types (pre-revisions)
 
 ### Kruskal-Wallis test to compare all 3 groups
 

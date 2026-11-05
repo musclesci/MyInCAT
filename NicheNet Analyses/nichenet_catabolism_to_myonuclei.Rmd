@@ -99,7 +99,7 @@ rm(ctl_samples, early_tb_samples, endpoint_tb_samples)
 
 # Define sender and receiver cell types
 
-### TUMOUR SENDERS "Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"
+### TUMOUR SENDERS "Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"
 
 ### MUSCLE SENDERS "Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Platelets", "Mast cells", "Dendritic cells", "Monocytes", "Macrophages", "Neutrophils", "B cells", "T cells", "NK cells", "Neural/glial cells", "Scwann cells"
 
@@ -169,7 +169,7 @@ muscle_tumours_combined <- NormalizeData(muscle_tumours_combined)
 ## Order Idents
 
 ```{r, include=FALSE}
-muscle_tumours_combined_levels <- c("Tumour Tumour cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells", "Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
+muscle_tumours_combined_levels <- c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells", "Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
 
 muscle_tumours_combined$seurat_clusters <- factor(muscle_tumours_combined$seurat_clusters, levels = muscle_tumours_combined_levels)
                                   
@@ -184,7 +184,7 @@ rm(muscle_tumours_combined_levels)
 ```{r, include=FALSE}
 Idents(muscle_tumours_combined) <- "seurat_clusters"
 
-sender_cells <- c("Tumour Tumour cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells", "Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
+sender_cells <- c("Tumour Malignant cells", "Tumour Endothelial cells", "Tumour Cancer-associated fibroblasts", "Tumour Monocytes/macrophages", "Tumour Neutrophils", "Tumour B cells", "Tumour T cells", "Tumour NK cells", "Muscle Satellite cells", "Muscle Myoblasts", "Muscle Myonuclei", "Muscle Endothelial cells", "Muscle vSMCs", "Muscle Pericytes", "Muscle FAPs", "Muscle Tenocytes", "Muscle Platelets", "Muscle Mast cells", "Muscle Dendritic cells", "Muscle Monocytes", "Muscle Macrophages", "Muscle Neutrophils", "Muscle B cells", "Muscle T cells", "Muscle NK cells", "Muscle Neural/glial cells", "Muscle Schwann cells")
 
 receiver_cells <- "Muscle Myonuclei"
 ```
@@ -411,6 +411,22 @@ p_ligand_target_network <- vis_ligand_target %>%
 p_ligand_target_network
 ```
 
+### write.csv of ligands x predicted target genes
+
+```{r, include=FALSE}
+write.csv(
+  vis_ligand_target,
+  file = "catabolism_to_myonuclei_regulatory_potential.csv",
+  row.names = TRUE
+)
+```
+
+### List of target genes
+
+```{r}
+colnames(vis_ligand_target)
+```
+
 ### Heatmap of ligands with > 0.01 aupr_corrected
 
 ```{r}
@@ -626,7 +642,57 @@ p_ligand_receptor_network
 ```
 
 
-## Check change in receptor expression with cachexia
+
+# Check receptor expression
+
+## Subset cell types
+
+```{r, include=FALSE}
+Idents(muscle_combined) <- "seurat_clusters"
+
+myonuclei <- subset(muscle_combined, idents = "Myonuclei")
+```
+
+
+## Tgfbr1 in myonuclei
+
+```{r, include=FALSE}
+myonuclei_Tgfbr1 <- AverageExpression(
+  myonuclei,
+  features = "Tgfbr1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Tgfbr2 in myonuclei
+
+```{r, include=FALSE}
+myonuclei_Tgfbr2 <- AverageExpression(
+  myonuclei,
+  features = "Tgfbr2",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## write.csv
+
+```{r, include=FALSE}
+write.csv(myonuclei_Tgfbr1,
+          "myonuclei_Tgfbr1.csv",
+          row.names = TRUE)
+
+write.csv(myonuclei_Tgfbr2,
+          "myonuclei_Tgfbr2.csv",
+          row.names = TRUE)
+```
+
+
+
+# Receptors expression in combined cell types (pre-revisions)
 
 ```{r, include=FALSE}
 # Create combined grouping variable
@@ -1015,23 +1081,3 @@ ggraph(tgfb3_igraph, layout = "dendrogram") +
 ggsave("dendrogram_myonuclei_catabolism.tiff", width = 10, height = 8, dpi = 1200)
 ggsave("dendrogram_myonuclei_catabolism.eps", width = 10, height = 8, dpi = 1200)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

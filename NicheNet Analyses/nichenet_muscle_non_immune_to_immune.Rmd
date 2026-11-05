@@ -308,6 +308,22 @@ p_ligand_target_network = vis_ligand_target %>%
 p_ligand_target_network
 ```
 
+### write.csv of ligands x predicted target genes
+
+```{r, include=FALSE}
+write.csv(
+  vis_ligand_target,
+  file = "non_immune_to_immune_regulatory_potential.csv",
+  row.names = TRUE
+)
+```
+
+### List of target genes
+
+```{r}
+colnames(vis_ligand_target)
+```
+
 ### List of average and sum regulatory potential per ligand
 
 ```{r}
@@ -609,7 +625,107 @@ DotPlot(muscle_immune, features = c("Itga5", "Itgb1", "Mertk"), idents = receive
 ```
 
 
-## Check change in receptor expression with cachexia
+
+# Check receptor expression
+
+## Subset cell types
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+monocytes <- subset(sc_combined, idents = "Monocytes")
+macrophages <- subset(sc_combined, idents = "Macrophages")
+```
+
+
+## Itga5 found to be expressed in Monocytes and Macrophages
+
+```{r, include=FALSE}
+monocytes_Itga5 <- AverageExpression(
+  monocytes,
+  features = "Itga5",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Itga5 <- AverageExpression(
+  macrophages,
+  features = "Itga5",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Itgb1 found to be expressed in Monocytes and Macrophages
+
+```{r, include=FALSE}
+monocytes_Itgb1 <- AverageExpression(
+  monocytes,
+  features = "Itgb1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Itgb1 <- AverageExpression(
+  macrophages,
+  features = "Itgb1",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Mertk found to be expressed in Monocytes and Macrophages
+
+```{r, include=FALSE}
+monocytes_Mertk <- AverageExpression(
+  monocytes,
+  features = "Mertk",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Mertk <- AverageExpression(
+  macrophages,
+  features = "Mertk",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## write.csv
+
+```{r, include=FALSE}
+write.csv(monocytes_Itga5,
+          "monocytes_Itga5.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Itga5,
+          "macrophages_Itga5.csv",
+          row.names = TRUE)
+
+write.csv(monocytes_Itgb1,
+          "monocytes_Itgb1.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Itgb1,
+          "macrophages_Itgb1.csv",
+          row.names = TRUE)
+
+write.csv(monocytes_Mertk,
+          "monocytes_Mertk.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Mertk,
+          "macrophages_Mertk.csv",
+          row.names = TRUE)
+```
+
+
+
+# Receptors expression in combined cell types (pre-revisions)
 
 ### Kruskal-Wallis test to compare all 3 groups
 

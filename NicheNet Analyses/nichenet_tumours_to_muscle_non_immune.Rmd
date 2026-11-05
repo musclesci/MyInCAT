@@ -111,7 +111,7 @@ ligand_target_matrix <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_da
 
 # Define sender and receiver cell types
 
-### TUMOUR SENDERS "Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"
+### TUMOUR SENDERS "Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"
 
 ### MUSCLE RECEIVERS "Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Neural/glial cells", "Schwann cells"
 
@@ -119,7 +119,7 @@ ligand_target_matrix <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_da
 Idents(sc_combined) <- "seurat_clusters"
 Idents(tumours_combined) <- "seurat_clusters"
 
-sender_cells <- c("Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells")
+sender_cells <- c("Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells")
 
 receiver_cells <- c("Satellite cells", "Myoblasts", "Myonuclei", "Endothelial cells", "vSMCs", "Pericytes", "FAPs", "Tenocytes", "Neural/glial cells", "Schwann cells")
 ```
@@ -263,7 +263,7 @@ active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_d
 ### Filter for ligands expressed in sender cells with an average expression >= 0.25 in >= 25% of cells
 
 ```{r, include=FALSE}
-tumour_cells_all <- subset(tumours_combined, idents = c("Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"))
+tumour_cells_all <- subset(tumours_combined, idents = c("Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"))
 
 # Extract log-normalized data
 sender_mat <- Seurat::GetAssayData(tumour_cells_all, assay = "RNA", layer = "data")[ligand_activities_genes_cellchat, ]
@@ -310,6 +310,22 @@ p_ligand_target_network = vis_ligand_target %>%
   scale_fill_gradient(low = "grey95", high = "red", limits = c(0, 0.3))
 
 p_ligand_target_network
+```
+
+### write.csv of ligands x predicted target genes
+
+```{r, include=FALSE}
+write.csv(
+  vis_ligand_target,
+  file = "tumours_to_non_immune_regulatory_potential.csv",
+  row.names = TRUE
+)
+```
+
+### List of target genes
+
+```{r}
+colnames(vis_ligand_target)
 ```
 
 ### List of average and sum regulatory potential per ligand
@@ -371,7 +387,8 @@ de_receiver_genes <- de_receiver_genes %>%
 ligand_target_gene_list_pos <- de_receiver_genes %>%
   dplyr::filter(
     gene %in% ligand_target_gene_list,
-    avg_log2FC > 0.2
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
   ) %>%
   dplyr::pull(gene) %>%
   unique()
@@ -381,7 +398,8 @@ ligand_target_gene_list_pos <- de_receiver_genes %>%
 ligand_target_gene_list_neg <- de_receiver_genes %>%
   dplyr::filter(
     gene %in% ligand_target_gene_list,
-    avg_log2FC < -0.2
+    avg_log2FC < -0.2,
+    p_val_adj < 0.05
   ) %>%
   dplyr::pull(gene) %>%
   unique()
@@ -602,7 +620,220 @@ DotPlot(muscle_non_immune, features = c("Lifr","Il6st","Osmr"), idents = c("Sate
 ```
 
 
-## Check change in receptor expression with cachexia
+
+# Check receptor expression
+
+## Subset cell types
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+endothelial_cells <- subset(sc_combined, idents = "Endothelial cells")
+vSMCs <- subset(sc_combined, idents = "vSMCs")
+pericytes <- subset(sc_combined, idents = "Pericytes")
+FAPs <- subset(sc_combined, idents = "FAPs")
+tenocytes <- subset(sc_combined, idents = "Tenocytes")
+neural_glial_cells <- subset(sc_combined, idents = "Neural/glial cells")
+```
+
+
+## Lifr found to be expressed in Endothelial cells, FAPs, Tenocytes, Neural/glial cells
+
+```{r, include=FALSE}
+endothelial_cells_Lifr <- AverageExpression(
+  endothelial_cells,
+  features = "Lifr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+FAPs_Lifr <- AverageExpression(
+  FAPs,
+  features = "Lifr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+tenocytes_Lifr <- AverageExpression(
+  tenocytes,
+  features = "Lifr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+neural_glial_cells_Lifr <- AverageExpression(
+  neural_glial_cells,
+  features = "Lifr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Il6st found to be expressed in Endothelial cells, FAPs, Tenocytes, Neural/glial cells
+
+```{r, include=FALSE}
+endothelial_cells_Il6st <- AverageExpression(
+  endothelial_cells,
+  features = "Il6st",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+FAPs_Il6st <- AverageExpression(
+  FAPs,
+  features = "Il6st",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+tenocytes_Il6st <- AverageExpression(
+  tenocytes,
+  features = "Il6st",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+neural_glial_cells_Il6st <- AverageExpression(
+  neural_glial_cells,
+  features = "Il6st",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Osmr found to be expressed in Endothelial cells, vSMCs, Pericytes, FAPs, Tenocytes
+
+```{r, include=FALSE}
+endothelial_cells_Osmr <- AverageExpression(
+  endothelial_cells,
+  features = "Osmr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+vSMCs_Osmr <- AverageExpression(
+  vSMCs,
+  features = "Osmr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+pericytes_Osmr <- AverageExpression(
+  pericytes,
+  features = "Osmr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+FAPs_Osmr <- AverageExpression(
+  FAPs,
+  features = "Osmr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+tenocytes_Osmr <- AverageExpression(
+  tenocytes,
+  features = "Osmr",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## write.csv
+
+```{r, include=FALSE}
+write.csv(endothelial_cells_Lifr, 
+          "endothelial_cells_Lifr.csv", 
+          row.names = TRUE)
+
+write.csv(FAPs_Lifr, 
+          "FAPs_Lifr.csv", 
+          row.names = TRUE)
+
+write.csv(tenocytes_Lifr, 
+          "tenocytes_Lifr.csv", 
+          row.names = TRUE)
+
+write.csv(neural_glial_cells_Lifr, 
+          "neural_glial_cells_Lifr.csv", 
+          row.names = TRUE)
+
+write.csv(endothelial_cells_Il6st, 
+          "endothelial_cells_Il6st.csv", 
+          row.names = TRUE)
+
+write.csv(FAPs_Il6st, 
+          "FAPs_Il6st.csv", 
+          row.names = TRUE)
+
+write.csv(tenocytes_Il6st, 
+          "tenocytes_Il6st.csv", 
+          row.names = TRUE)
+
+write.csv(neural_glial_cells_Il6st, 
+          "neural_glial_cells_Il6st.csv", 
+          row.names = TRUE)
+
+write.csv(endothelial_cells_Osmr, 
+          "endothelial_cells_Osmr.csv",
+          row.names = TRUE)
+
+write.csv(vSMCs_Osmr, 
+          "vSMCs_Osmr.csv", 
+          row.names = TRUE)
+
+write.csv(pericytes_Osmr, 
+          "pericytes_Osmr.csv", 
+          row.names = TRUE)
+
+write.csv(FAPs_Osmr, 
+          "FAPs_Osmr.csv", 
+          row.names = TRUE)
+
+write.csv(tenocytes_Osmr, 
+          "tenocytes_Osmr.csv", 
+          row.names = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Receptors expression in combined cell types (pre-revisions)
 
 ### Kruskal-Wallis test to compare all 3 groups
 

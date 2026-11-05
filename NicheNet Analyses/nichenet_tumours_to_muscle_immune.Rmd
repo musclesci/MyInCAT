@@ -111,7 +111,7 @@ ligand_target_matrix <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_da
 
 # Define sender and receiver cell types
 
-### TUMOUR SENDERS "Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"
+### TUMOUR SENDERS "Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"
 
 ### MUSCLE RECEIVERS "Monocytes", "Macrophages", "Neutrophils", "NK cells"
 
@@ -119,7 +119,7 @@ ligand_target_matrix <- readRDS("C:/Users/nwb_l/Documents/r_projects/nichenet_da
 Idents(sc_combined) <- "seurat_clusters"
 Idents(tumours_combined) <- "seurat_clusters"
 
-sender_cells <- c("Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells")
+sender_cells <- c("Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells")
 
 receiver_cells <- c("Monocytes", "Macrophages", "Neutrophils", "NK cells")
 ```
@@ -263,7 +263,7 @@ active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_d
 ### Filter for ligands expressed in sender cells with an average expression >= 0.25 in >= 25% of cells
 
 ```{r, include=FALSE}
-tumour_cells_all <- subset(tumours_combined, idents = c("Tumour cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"))
+tumour_cells_all <- subset(tumours_combined, idents = c("Malignant cells", "Endothelial cells", "Cancer-associated fibroblasts", "Monocytes/macrophages", "Neutrophils", "B cells", "T cells", "NK cells"))
 
 # Extract log-normalized data
 sender_mat <- Seurat::GetAssayData(tumour_cells_all, assay = "RNA", layer = "data")[ligand_activities_genes_cellchat, ]
@@ -310,6 +310,22 @@ p_ligand_target_network = vis_ligand_target %>%
   scale_fill_gradient(low = "grey95", high = "red", limits = c(0, 0.3))
 
 p_ligand_target_network
+```
+
+### write.csv of ligands x predicted target genes
+
+```{r, include=FALSE}
+write.csv(
+  vis_ligand_target,
+  file = "tumours_to_immune_regulatory_potential.csv",
+  row.names = TRUE
+)
+```
+
+### List of target genes
+
+```{r}
+colnames(vis_ligand_target)
 ```
 
 ### List of average and sum regulatory potential per ligand
@@ -396,7 +412,113 @@ ligand_target_gene_list_neg
 ```
 
 
-## Run GO analyses
+## TNF-specific target genes
+
+```{r}
+## Identify Tnf target genes
+tnf_target_genes <- vis_ligand_target %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ligand") %>%
+  tidyr::pivot_longer(
+    -ligand,
+    names_to = "target",
+    values_to = "regulatory_potential"
+  ) %>%
+  dplyr::filter(
+    regulatory_potential > 0.1,
+    ligand == "Tnf"
+  )
+
+## Full Tnf target gene list
+tnf_target_gene_list <- unique(tnf_target_genes$target)
+
+
+## Identify Tnf target genes that are also upregulated
+tnf_upregulated_target_genes <- de_receiver_genes %>%
+  dplyr::filter(
+    gene %in% tnf_target_gene_list,
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
+  ) %>%
+  dplyr::pull(gene) %>%
+  unique()
+
+tnf_upregulated_target_genes
+```
+
+
+## CCL12-specific target genes
+
+```{r}
+## Identify Ccl12 target genes
+ccl12_target_genes <- vis_ligand_target %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ligand") %>%
+  tidyr::pivot_longer(
+    -ligand,
+    names_to = "target",
+    values_to = "regulatory_potential"
+  ) %>%
+  dplyr::filter(
+    regulatory_potential > 0.1,
+    ligand == "Ccl12"
+  )
+
+## Full Ccl12 target gene list
+ccl12_target_gene_list <- unique(ccl12_target_genes$target)
+
+
+## Identify Ccl12 target genes that are also upregulated
+ccl12_upregulated_target_genes <- de_receiver_genes %>%
+  dplyr::filter(
+    gene %in% ccl12_target_gene_list,
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
+  ) %>%
+  dplyr::pull(gene) %>%
+  unique()
+
+ccl12_upregulated_target_genes
+```
+
+
+## CXCL12-specific target genes
+
+```{r}
+## Identify Cxcl12 target genes
+cxcl12_target_genes <- vis_ligand_target %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ligand") %>%
+  tidyr::pivot_longer(
+    -ligand,
+    names_to = "target",
+    values_to = "regulatory_potential"
+  ) %>%
+  dplyr::filter(
+    regulatory_potential > 0.1,
+    ligand == "Cxcl12"
+  )
+
+## Full Cxcl12 target gene list
+cxcl12_target_gene_list <- unique(cxcl12_target_genes$target)
+
+
+## Identify Cxcl12 target genes that are also upregulated
+cxcl12_upregulated_target_genes <- de_receiver_genes %>%
+  dplyr::filter(
+    gene %in% cxcl12_target_gene_list,
+    avg_log2FC > 0.2,
+    p_val_adj < 0.05
+  ) %>%
+  dplyr::pull(gene) %>%
+  unique()
+
+cxcl12_upregulated_target_genes
+```
+
+
+
+# Run GO analyses
 
 ```{r, include=FALSE}
 upgo_predicted_genes_muscle_immune_from_tumours <- enrichGO(gene = ligand_target_gene_list_pos, OrgDb = "org.Mm.eg.db", keyType = "SYMBOL", ont = "BP")
@@ -584,7 +706,135 @@ DotPlot(muscle_immune, features = c("Ccr2", "Cxcr4", "Tnfrsf1a", "Tnfrsf1b")) +
 ```
 
 
-## Check change in receptor expression with cachexia
+
+# Check receptor expression
+
+## Subset cell types
+
+```{r, include=FALSE}
+Idents(sc_combined) <- "seurat_clusters"
+
+monocytes <- subset(sc_combined, idents = "Monocytes")
+macrophages <- subset(sc_combined, idents = "Macrophages")
+neutrophils <- subset(sc_combined, idents = "Neutrophils")
+```
+
+
+## Ccr2 found to be expressed in monocytes and macrophages
+
+```{r, include=FALSE}
+monocytes_Ccr2 <- AverageExpression(
+  monocytes,
+  features = "Ccr2",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Ccr2 <- AverageExpression(
+  macrophages,
+  features = "Ccr2",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Cxcr4 found to be expressed in Neutrophils
+
+```{r, include=FALSE}
+neutrophils_Cxcr4 <- AverageExpression(
+  neutrophils,
+  features = "Cxcr4",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Tnfrsf1a found to be expressed in Monocytes, Macrophages, and Neutrophils
+
+```{r, include=FALSE}
+monocytes_Tnfrsf1a <- AverageExpression(
+  monocytes,
+  features = "Tnfrsf1a",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Tnfrsf1a <- AverageExpression(
+  macrophages,
+  features = "Tnfrsf1a",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+neutrophils_Tnfrsf1a <- AverageExpression(
+  neutrophils,
+  features = "Tnfrsf1a",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## Tnfrsf1b found to be expressed in Monocytes and Macrophages
+
+```{r, include=FALSE}
+monocytes_Tnfrsf1b <- AverageExpression(
+  monocytes,
+  features = "Tnfrsf1b",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+
+macrophages_Tnfrsf1b <- AverageExpression(
+  macrophages,
+  features = "Tnfrsf1b",
+  group.by = c("experiment", "condition"),
+  layer = "data"
+)$RNA
+```
+
+
+## write.csv
+
+```{r, include=FALSE}
+write.csv(monocytes_Ccr2,
+          "monocytes_Ccr2.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Ccr2,
+          "macrophages_Ccr2.csv",
+          row.names = TRUE)
+
+write.csv(neutrophils_Cxcr4,
+          "neutrophils_Cxcr4.csv",
+          row.names = TRUE)
+
+write.csv(monocytes_Tnfrsf1a,
+          "monocytes_Tnfrsf1a.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Tnfrsf1a,
+          "macrophages_Tnfrsf1a.csv",
+          row.names = TRUE)
+
+write.csv(neutrophils_Tnfrsf1a,
+          "neutrophils_Tnfrsf1a.csv",
+          row.names = TRUE)
+
+write.csv(monocytes_Tnfrsf1b,
+          "monocytes_Tnfrsf1b.csv",
+          row.names = TRUE)
+
+write.csv(macrophages_Tnfrsf1b,
+          "macrophages_Tnfrsf1b.csv",
+          row.names = TRUE)
+```
+
+
+
+# Receptors expression in combined cell types (pre-revisions)
 
 ### Kruskal-Wallis test to compare all 3 groups
 
@@ -1041,7 +1291,7 @@ ggraph(tnf_igraph, layout = "dendrogram") +
     legend.position = "none"
   )
 
-# ---- 6. Save TIFF ----
+# ---- 6. Save Plot ----
 ggsave("dendrogram_tumour_to_muscle_immune_tnf_inflammatory.tiff", width = 10, height = 8, dpi = 1200)
 ggsave("dendrogram_tumour_to_muscle_immune_tnf_inflammatory.eps", width = 10, height = 8, dpi = 1200)
 ```
