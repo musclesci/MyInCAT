@@ -4,7 +4,7 @@
 We present the Myogenic single-cell Integration of Cachexia-Associated Transcriptomics (MyInCAT) resource for the analysis of single-cell/nucleus RNA-sequencing datasets of skeletal muscle with cancer cachexia and their associated tumours.
 
 Reference this paper: 
-Brown, A., Lafond, I., De Lisio, M., Wiper-Bergeron, N. (2026). Tumour-secreted signals propagate muscle inflammatory signaling and indirectly target myofibres in cancer cachexia. J Cachexia Sarcopenia Muscle. 
+A. Brown, I. Lafond, M. De Lisio, and N. Wiper-Bergeron. “Tumour-Shttps:doi.orgls Propagate Muscle Inflammatory Signalling and Indirectly Target Myofibres in Cancer Cachexia.” _Journal of Cachexia, Sarcopenia and Muscle_ (2026): e70441, https:doi.org/10.1002/jcsm.70441
 
 Link to the MyInCAT web resource: 
 myincat.org
