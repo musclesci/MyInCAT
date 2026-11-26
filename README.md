@@ -7,7 +7,7 @@ Reference this paper:
 A. Brown, I. Lafond, M. De Lisio, and N. Wiper-Bergeron. “Tumour-Secreted Signals Propagate Muscle Inflammatory Signalling and Indirectly Target Myofibres in Cancer Cachexia.” _Journal of Cachexia, Sarcopenia and Muscle_ (2026): e70441, https:doi.org/10.1002/jcsm.70441
 
 Link to the MyInCAT web resource: 
-myincat.org
+[myincat.org](https://myincat.org)
 
 Codes related to the MyInCAT website design:
 https://github.com/IsaacLafond/MyInCAT
